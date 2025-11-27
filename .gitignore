@@ -1,0 +1,6 @@
+bin/
+logs/
+*.o
+*.out
+.DS_Store
+.vscode/
