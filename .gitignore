@@ -4,3 +4,5 @@ logs/
 *.out
 .DS_Store
 .vscode/
+
+*opis_BarMleczny.md
