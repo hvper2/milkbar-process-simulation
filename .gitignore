@@ -1,9 +1,16 @@
+# Pliki kompilacji
+obj/
 bin/
-logs/
 *.o
 *.out
-.DS_Store
-.vscode/
 
-*opis_BarMleczny.md
-*.pdf
+# Logi
+logs/*.log
+
+# Backup files
+*~
+*.swp
+*.bak
+
+# System files
+.DS_Store

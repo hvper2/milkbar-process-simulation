@@ -1,0 +1,82 @@
+#ifndef COMMON_H
+#define COMMON_H
+
+// Definicja dla funkcji POSIX (kill, waitpid itp.)
+#define _POSIX_C_SOURCE 200809L
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
+#include <sys/msg.h>
+#include <sys/sem.h>
+#include <sys/wait.h>
+#include <signal.h>
+#include <time.h>
+#include <errno.h>
+#include <string.h>
+#include <fcntl.h>
+
+
+// Liczba stolików każdego typu
+#define X1 4  // stoliki 1-osobowe
+#define X2 3  // stoliki 2-osobowe
+#define X3 2  // stoliki 3-osobowe
+#define X4 2  // stoliki 4-osobowe
+
+// Maksymalna liczba osób w sali: N = X1*1 + X2*2 + X3*3 + X4*4
+#define MAX_PERSONS (X1*1 + X2*2 + X3*3 + X4*4)
+
+// Czas symulacji (w sekundach) - można zmienić
+#define SIMULATION_TIME 30
+
+// Tempo napływania klientów (odstęp w sekundach)
+#define CLIENT_INTERVAL 2
+
+// Prawdopodobieństwo, że klient nie zamawia (5% = 5 na 100)
+#define NO_ORDER_PROBABILITY 5
+
+// Klucz bazowy dla zasobów IPC
+#define IPC_KEY_BASE 0x12345678
+#define SHM_KEY (IPC_KEY_BASE + 1)
+#define MSG_KEY (IPC_KEY_BASE + 2)
+#define SEM_KEY (IPC_KEY_BASE + 3)
+#define LOG_SEM_KEY (IPC_KEY_BASE + 4)
+
+// structura przechowująca stan sali w pamięci dzielonej
+typedef struct {
+    int table_1[X1];      // 0 = wolny, 1 = zajęty (grupa 1-os.)
+    int table_2[X2];      // 0 = wolny, 1-2 = zajęte miejsca (grupa 2-os.)
+    int table_3[X3];      // 0 = wolny, 1-3 = zajęte miejsca (grupa 3-os.)
+    int table_4[X4];      // 0 = wolny, 1-4 = zajęte miejsca (grupa 4-os.)
+    
+    int reserved_seats;   // Liczba zarezerwowanych miejsc (przez kierownika)
+    int dirty_dishes;     // Licznik brudnych naczyń
+    int x3_doubled;       // Flaga: czy X3 już zostało podwojone (0/1)
+    
+    int total_free_seats; // Aktualna liczba wolnych miejsc
+} SharedState;
+
+//  kolejka komunikatów - typy wiadomości
+#define MSG_TYPE_PAYMENT 1        // Klient → Kasjer: "chcę zapłacić"
+#define MSG_TYPE_PAID 2           // Kasjer → Obsługa: "opłacone i wydane"
+#define MSG_TYPE_DISHES 3         // Klient → Obsługa: "oddajemy naczynia"
+#define MSG_TYPE_SEAT_REQUEST 4   // Klient → Obsługa: "czy jest miejsce dla grupy N?"
+
+// Struktura wiadomości
+typedef struct {
+    long mtype;           // Typ wiadomości (obowiązkowe pole)
+    int group_id;         // ID grupy klienta
+    int group_size;       // Rozmiar grupy (1, 2, 3)
+    int table_type;       // Typ stolika (1, 2, 3, 4)
+    int table_index;      // Indeks stolika w tablicy
+} Message;
+
+// semafory - indeksy w zbiorze semaforów
+#define SEM_SHARED_STATE 0    // Mutex na pamięć dzieloną
+#define SEM_FREE_SEATS 1      // Semafor "są wolne miejsca"
+
+#endif // COMMON_H
+
