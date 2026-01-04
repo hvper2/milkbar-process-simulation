@@ -40,16 +40,45 @@ int main(int argc, char *argv[]) {
         }
         
         // SIGUSR1 - podwój X3 (po 10s, tylko raz)
-        
+        if (!sigusr1_sent && elapsed >= 10) {
+            if (pid_obsluga > 0) {
+                log_message("KIEROWNIK: Wysyłam SIGUSR1 do obsługi (podwój X3)");
+                if (kill(pid_obsluga, SIGUSR1) == -1) {
+                    log_message("KIEROWNIK: Błąd kill(SIGUSR1): %s", strerror(errno));
+                }
+                sigusr1_sent = 1;
+            }
+        }
         
         // SIGUSR2 - rezerwacja (po 15s)
-        
+        if (elapsed >= 15 && elapsed < 16) {
+            if (pid_obsluga > 0) {
+                log_message("KIEROWNIK: Wysyłam SIGUSR2 do obsługi (rezerwacja miejsc)");
+                if (kill(pid_obsluga, SIGUSR2) == -1) {
+                    log_message("KIEROWNIK: Błąd kill(SIGUSR2): %s", strerror(errno));
+                }
+            }
+        }
         
         sleep(1);
     }
     
     // Sygnał pożaru - SIGTERM
+    log_message("KIEROWNIK: Wysyłam sygnał pożaru (SIGTERM) do wszystkich procesów");
     
+    if (pid_obsluga > 0) {
+        if (kill(pid_obsluga, SIGTERM) == -1) {
+            log_message("KIEROWNIK: Błąd kill(SIGTERM do obsługi): %s", strerror(errno));
+        }
+    }
+    
+    if (pid_kasjer > 0) {
+        if (kill(pid_kasjer, SIGTERM) == -1) {
+            log_message("KIEROWNIK: Błąd kill(SIGTERM do kasjera): %s", strerror(errno));
+        }
+    }
+    
+    log_message("KIEROWNIK: Sygnały pożaru wysłane - kończę pracę");
     
     return EXIT_SUCCESS;
 }
