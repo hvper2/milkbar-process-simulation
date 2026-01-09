@@ -37,53 +37,53 @@ int main(void) {
     
     log_message("KLIENT #%d: Zamawia gorące danie", group_id);
     
-    // Sprawdź czy jest miejsce (przed płatnością)
-    SharedState *state = get_shared_memory();
-    if (state == NULL) {
-        handle_error("KLIENT: get_shared_memory failed");
-    }
+    // Rezerwacja stolika
+    Message seat_request;
+    seat_request.mtype = MSG_TYPE_SEAT_REQUEST;
+    seat_request.group_id = group_id;
+    seat_request.group_size = group_size;
+    seat_request.table_type = 0;
+    seat_request.table_index = 0;
     
-    int sem_id = get_semaphores();
-    if (sem_id == -1) {
-        handle_error("KLIENT: get_semaphores failed");
-    }
+    ssize_t msg_size = sizeof(Message) - sizeof(long);
     
-    struct sembuf sem_op;
-    sem_op.sem_num = SEM_SHARED_STATE;
-    sem_op.sem_op = -1;
-    sem_op.sem_flg = 0;
-    
-    if (semop(sem_id, &sem_op, 1) == -1) {
-        log_message("KLIENT #%d: Błąd semop (sprawdzanie miejsc): %s", group_id, strerror(errno));
-        shmdt(state);
+    if (msgsnd(msg_queue_id, &seat_request, msg_size, 0) == -1) {
+        log_message("KLIENT #%d: Błąd msgsnd (rezerwacja): %s", group_id, strerror(errno));
         return EXIT_FAILURE;
     }
     
-    int has_place = 0;
-    if (state->total_free_seats - state->reserved_seats >= group_size) {
-        has_place = 1;
+    log_message("KLIENT #%d: Wysłano prośbę o rezerwację stolika", group_id);
+    
+    // Czekamy na odpowiedź od obsługi (typ = 1000 + group_id)
+    Message seat_response;
+    long reply_type = 1000 + group_id;
+    
+    ssize_t received = msgrcv(msg_queue_id, &seat_response, msg_size, reply_type, 0);
+    if (received == -1) {
+        if (errno == EINTR && !running) {
+            return EXIT_SUCCESS;
+        }
+        log_message("KLIENT #%d: Błąd msgrcv (oczekiwanie na stolik): %s", group_id, strerror(errno));
+        return EXIT_FAILURE;
     }
     
-    sem_op.sem_op = 1;
-    semop(sem_id, &sem_op, 1);
-    shmdt(state);
-    
-    if (!has_place) {
-        log_message("KLIENT #%d: Brak miejsc - wychodzi (NIE odbiera dania)", group_id);
+    // Sprawdź czy dostaliśmy stolik
+    if (seat_response.table_type == 0 || seat_response.table_index < 0) {
+        log_message("KLIENT #%d: Brak wolnych miejsc - wychodzi BEZ odbierania dania", group_id);
         return EXIT_SUCCESS;
     }
     
-    log_message("KLIENT #%d: Jest miejsce - przechodzi do płatności", group_id);
+    log_message("KLIENT #%d: Stolik %d-os. (indeks %d) ZAREZERWOWANY - idę płacić", 
+               group_id, seat_response.table_type, seat_response.table_index);
+    
     
     // Płatność
     Message payment_msg;
     payment_msg.mtype = MSG_TYPE_PAYMENT;
     payment_msg.group_id = group_id;
     payment_msg.group_size = group_size;
-    payment_msg.table_type = 0;
-    payment_msg.table_index = 0;
-    
-    ssize_t msg_size = sizeof(Message) - sizeof(long);
+    payment_msg.table_type = seat_response.table_type;
+    payment_msg.table_index = seat_response.table_index;
     
     if (msgsnd(msg_queue_id, &payment_msg, msg_size, 0) == -1) {
         log_message("KLIENT #%d: Błąd msgsnd (płatność): %s", group_id, strerror(errno));

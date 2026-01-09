@@ -111,6 +111,7 @@ int create_shared_memory(void) {
     state->reserved_seats = 0;
     state->dirty_dishes = 0;
     state->x3_doubled = 0;
+    state->effective_x3 = X3;  // Początkowo X3 stolików, może być podwojone
     
     if (shmdt(state) == -1) {
         handle_error("create_shared_memory: shmdt failed");

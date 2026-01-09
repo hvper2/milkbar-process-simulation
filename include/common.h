@@ -23,11 +23,14 @@
 // Liczba stolików każdego typu
 #define X1 4  // stoliki 1-osobowe
 #define X2 3  // stoliki 2-osobowe
-#define X3 2  // stoliki 3-osobowe
+#define X3 2  // stoliki 3-osobowe (bazowa liczba, może być podwojona)
+#define X3_MAX (X3 * 2)  // maksymalna liczba po podwojeniu
 #define X4 2  // stoliki 4-osobowe
 
 // Maksymalna liczba osób w sali: N = X1*1 + X2*2 + X3*3 + X4*4
+// Uwaga: po podwojeniu X3 zwiększa się o X3*3 dodatkowych miejsc
 #define MAX_PERSONS (X1*1 + X2*2 + X3*3 + X4*4)
+#define MAX_PERSONS_DOUBLED (X1*1 + X2*2 + X3_MAX*3 + X4*4)
 
 // Czas symulacji (w sekundach) - można zmienić
 #define SIMULATION_TIME 30
@@ -49,12 +52,13 @@
 typedef struct {
     int table_1[X1];      // 0 = wolny, 1 = zajęty (grupa 1-os.)
     int table_2[X2];      // 0 = wolny, 1-2 = zajęte miejsca (grupa 2-os.)
-    int table_3[X3];      // 0 = wolny, 1-3 = zajęte miejsca (grupa 3-os.)
+    int table_3[X3_MAX];  // 0 = wolny, 1-3 = zajęte miejsca (tablica na podwojenie)
     int table_4[X4];      // 0 = wolny, 1-4 = zajęte miejsca (grupa 4-os.)
     
     int reserved_seats;   // Liczba zarezerwowanych miejsc (przez kierownika)
     int dirty_dishes;     // Licznik brudnych naczyń
     int x3_doubled;       // Flaga: czy X3 już zostało podwojone (0/1)
+    int effective_x3;     // Aktualna liczba stolików 3-os. (X3 lub X3*2)
     
     int total_free_seats; // Aktualna liczba wolnych miejsc
 } SharedState;
@@ -63,7 +67,9 @@ typedef struct {
 #define MSG_TYPE_PAYMENT 1        // Klient → Kasjer: "chcę zapłacić"
 #define MSG_TYPE_PAID 2           // Kasjer → Obsługa: "opłacone i wydane"
 #define MSG_TYPE_DISHES 3         // Klient → Obsługa: "oddajemy naczynia"
-#define MSG_TYPE_SEAT_REQUEST 4   // Klient → Obsługa: "czy jest miejsce dla grupy N?"
+#define MSG_TYPE_SEAT_REQUEST 4   // Klient → Obsługa: "rezerwuj stolik dla grupy"
+#define MSG_TYPE_SEAT_CONFIRM 5   // Obsługa → Klient: "stolik zarezerwowany"
+#define MSG_TYPE_SEAT_REJECT 6    // Obsługa → Klient: "brak miejsca"
 
 // Struktura wiadomości
 typedef struct {
