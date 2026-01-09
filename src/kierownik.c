@@ -7,51 +7,36 @@ static pid_t clients_pgid = -1;  // PGID grupy klientów
 static int running = 1;
 
 void signal_handler(int sig) {
-    log_message("KIEROWNIK: Otrzymano sygnał %d - kończę pracę", sig);
+    (void)sig;
     running = 0;
 }
 
 int main(int argc, char *argv[]) {
-    log_message("KIEROWNIK: Start pracy kierownika");
-    
     signal(SIGTERM, signal_handler);
     signal(SIGINT, signal_handler);
     
-    if (argc > 1) {
-        pid_obsluga = atoi(argv[1]);
-    }
-    if (argc > 2) {
-        pid_kasjer = atoi(argv[2]);
-    }
-    if (argc > 3) {
-        clients_pgid = atoi(argv[3]);
-    }
+    if (argc > 1) pid_obsluga = atoi(argv[1]);
+    if (argc > 2) pid_kasjer = atoi(argv[2]);
+    if (argc > 3) clients_pgid = atoi(argv[3]);
     
-    log_message("KIEROWNIK: PID obsługi=%d, PID kasjera=%d, PGID klientów=%d", pid_obsluga, pid_kasjer, clients_pgid);
-    
-    srand(time(NULL) ^ getpid());  // Inicjalizacja generatora losowego
+    srand(time(NULL) ^ getpid());
     
     time_t start_time = time(NULL);
     int sigusr1_sent = 0;
-    
-    log_message("KIEROWNIK: Rozpoczęcie zarządzania sygnałami");
     
     while (running) {
         time_t current_time = time(NULL);
         int elapsed = (int)(current_time - start_time);
         
         if (elapsed >= SIMULATION_TIME) {
-            log_message("KIEROWNIK: Czas symulacji minął - wysyłam sygnał pożaru");
             break;
         }
         
         // SIGUSR1 - podwój X3 (po 10s, tylko raz)
         if (!sigusr1_sent && elapsed >= 10) {
             if (pid_obsluga > 0) {
-                log_message("KIEROWNIK: Wysyłam SIGUSR1 do obsługi (podwój X3)");
-                if (kill(pid_obsluga, SIGUSR1) == -1) {
-                    log_message("KIEROWNIK: Błąd kill(SIGUSR1): %s", strerror(errno));
-                }
+                log_message("KIEROWNIK: >>> SIGUSR1 - podwojenie stolików 3-osobowych");
+                kill(pid_obsluga, SIGUSR1);
                 sigusr1_sent = 1;
             }
         }
@@ -59,33 +44,23 @@ int main(int argc, char *argv[]) {
         // SIGUSR2 - rezerwacja (po 15s) - z uzgodnieniem liczby miejsc
         if (elapsed >= 15 && elapsed < 16) {
             if (pid_obsluga > 0) {
-                // Losowa liczba miejsc do rezerwacji (2-5)
                 int seats_to_reserve = (rand() % 4) + 2;
                 
-                log_message("KIEROWNIK: Wysyłam SIGUSR2 + komunikat do obsługi (rezerwacja %d miejsc)", seats_to_reserve);
+                log_message("KIEROWNIK: >>> SIGUSR2 - rezerwacja %d miejsc", seats_to_reserve);
                 
-                // Najpierw wysyłamy komunikat z liczbą miejsc
                 int msg_id = msgget(MSG_KEY, 0);
                 if (msg_id != -1) {
                     Message reserve_msg;
                     reserve_msg.mtype = MSG_TYPE_RESERVE_SEATS;
-                    reserve_msg.group_id = getpid();  // ID kierownika
-                    reserve_msg.group_size = seats_to_reserve;  // Liczba miejsc do rezerwacji
+                    reserve_msg.group_id = getpid();
+                    reserve_msg.group_size = seats_to_reserve;
                     reserve_msg.table_type = 0;
                     reserve_msg.table_index = 0;
                     
                     ssize_t msg_size = sizeof(Message) - sizeof(long);
-                    if (msgsnd(msg_id, &reserve_msg, msg_size, 0) == -1) {
-                        log_message("KIEROWNIK: Błąd msgsnd (rezerwacja): %s", strerror(errno));
-                    } else {
-                        log_message("KIEROWNIK: Wysłano komunikat rezerwacji %d miejsc", seats_to_reserve);
-                    }
+                    msgsnd(msg_id, &reserve_msg, msg_size, 0);
                 }
-                
-                // Potem wysyłamy sygnał
-                if (kill(pid_obsluga, SIGUSR2) == -1) {
-                    log_message("KIEROWNIK: Błąd kill(SIGUSR2): %s", strerror(errno));
-                }
+                kill(pid_obsluga, SIGUSR2);
             }
         }
         
@@ -93,36 +68,17 @@ int main(int argc, char *argv[]) {
     }
     
     // Sygnał pożaru - SIGTERM
-    log_message("KIEROWNIK: POŻAR - Wysyłam sygnał do wszystkich procesów");
+    log_message("KIEROWNIK: >>> POŻAR! Ewakuacja wszystkich klientów");
     
-    // sygnał do klientow
     if (clients_pgid > 0) {
-        log_message("KIEROWNIK: Wysyłam SIGTERM do WSZYSTKICH klientów (PGID=%d)", clients_pgid);
-        if (killpg(clients_pgid, SIGTERM) == -1) {
-            log_message("KIEROWNIK: Błąd killpg(SIGTERM do klientów): %s", strerror(errno));
-        } else {
-            log_message("KIEROWNIK: Sygnał pożaru wysłany do grupy klientów");
-        }
+        killpg(clients_pgid, SIGTERM);
     }
     
     sleep(1);
     
     // sygnał do obsługi i kasjera
-    log_message("KIEROWNIK: Klienci ewakuowani - kończę pracę obsługi i kasy");
-    
-    if (pid_obsluga > 0) {
-        if (kill(pid_obsluga, SIGTERM) == -1) {
-            log_message("KIEROWNIK: Błąd kill(SIGTERM do obsługi): %s", strerror(errno));
-        }
-    }
-    
-    if (pid_kasjer > 0) {
-        if (kill(pid_kasjer, SIGTERM) == -1) {
-            log_message("KIEROWNIK: Błąd kill(SIGTERM do kasjera): %s", strerror(errno));
-        }
-    }
-    
-    log_message("KIEROWNIK: Sygnały pożaru wysłane - kończę pracę");
+    if (pid_obsluga > 0) kill(pid_obsluga, SIGTERM);
+    if (pid_kasjer > 0) kill(pid_kasjer, SIGTERM);
     
     return EXIT_SUCCESS;
 }

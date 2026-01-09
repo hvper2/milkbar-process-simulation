@@ -168,32 +168,25 @@ void free_table(int table_type, int table_index, int group_size) {
 
 void signal_handler(int sig) {
     if (sig == SIGUSR1) {
-        log_message("OBSLUGA: Otrzymano SIGUSR1 - próba podwojenia X3");
         sem_wait(sem_id, SEM_SHARED_STATE);
         
         if (shared_state->x3_doubled == 0) {
             shared_state->x3_doubled = 1;
             int old_x3 = shared_state->effective_x3;
-            shared_state->effective_x3 = X3 * 2;  // Podwajamy liczbę stolików 3-os.
-            
-            // Dodajemy nowe miejsca do puli
+            shared_state->effective_x3 = X3 * 2;
             int new_seats = X3 * 3;
             shared_state->total_free_seats += new_seats;
             
-            log_message("OBSLUGA: X3 PODWOJONE! Stoliki 3-os: %d -> %d (dodano %d miejsc)", 
+            log_message("OBSLUGA: X3 podwojone: %d -> %d stolików (+%d miejsc)", 
                        old_x3, shared_state->effective_x3, new_seats);
-        } else {
-            log_message("OBSLUGA: X3 już było podwojone - ignoruję");
         }
         
         sem_signal(sem_id, SEM_SHARED_STATE);
         
     } else if (sig == SIGUSR2) {
-        // SIGUSR2 to tylko sygnał - liczba miejsc przychodzi przez komunikat
-        log_message("OBSLUGA: Otrzymano SIGUSR2 - oczekuję komunikatu z liczbą miejsc do rezerwacji");
+        // Liczba miejsc przychodzi przez komunikat
         
     } else if (sig == SIGTERM || sig == SIGINT) {
-        log_message("OBSLUGA: Otrzymano sygnał %d - kończę pracę", sig);
         running = 0;
     }
 }
@@ -223,14 +216,10 @@ int main(void) {
     if (sem_id == -1) {
         handle_error("OBSLUGA: get_semaphores failed");
     }
-    
-    log_message("OBSLUGA: Połączono z zasobami IPC");
-    
+
     Message msg;
     ssize_t msg_size = sizeof(Message) - sizeof(long);
-    
-    log_message("OBSLUGA: Rozpoczęcie obsługi wiadomości");
-    
+
     for (int i = 0; i < MAX_GROUPS; i++) {
         group_to_table_type[i] = 0;
         group_to_table_index[i] = -1;
@@ -246,7 +235,6 @@ int main(void) {
                 }
                 continue;
             } else {
-                log_message("OBSLUGA: Błąd msgrcv: %s", strerror(errno));
                 if (!running) {
                     break;
                 }
@@ -256,9 +244,6 @@ int main(void) {
         
         // rezerwacja stolika
         if (msg.mtype == MSG_TYPE_SEAT_REQUEST) {
-            log_message("OBSLUGA: Otrzymano MSG_TYPE_SEAT_REQUEST (grupa #%d, rozmiar=%d)", 
-                       msg.group_id, msg.group_size);
-            
             sem_wait(sem_id, SEM_SHARED_STATE);
             
             Message response;
@@ -278,14 +263,14 @@ int main(void) {
                 response.table_type = table_type;
                 response.table_index = table_index;
                 
-                log_message("OBSLUGA: ZAREZERWOWANO stolik %d-os. (indeks %d) dla grupy #%d PRZED płatnością", 
+                log_message("OBSLUGA: Stolik %d-os.[%d] -> grupa #%d", 
                            table_type, table_index, msg.group_id);
             } else {
                 response.mtype = MSG_TYPE_SEAT_REJECT;
                 response.table_type = 0;
                 response.table_index = -1;
                 
-                log_message("OBSLUGA: BRAK MIEJSCA dla grupy #%d - klient NIE dostanie dania", msg.group_id);
+                log_message("OBSLUGA: BRAK MIEJSCA dla grupy #%d", msg.group_id);
             }
             
             sem_signal(sem_id, SEM_SHARED_STATE);
@@ -303,13 +288,9 @@ int main(void) {
             }
             
         } else if (msg.mtype == MSG_TYPE_PAID) {
-            // Teraz MSG_TYPE_PAID tylko loguje.  stolik już zarezerwowany
-            log_message("OBSLUGA: Otrzymano MSG_TYPE_PAID (grupa #%d) - stolik już zarezerwowany", 
-                       msg.group_id);
+            // Stolik już zarezerwowany - tylko potwierdzenie
             
         } else if (msg.mtype == MSG_TYPE_DISHES) {
-            log_message("OBSLUGA: Otrzymano MSG_TYPE_DISHES (grupa #%d)", msg.group_id);
-            
             sem_wait(sem_id, SEM_SHARED_STATE);
             
             int group_idx = msg.group_id % MAX_GROUPS;
@@ -320,49 +301,33 @@ int main(void) {
                 free_table(table_type, table_index, msg.group_size);
                 shared_state->dirty_dishes += msg.group_size;
                 
-                log_message("OBSLUGA: Zwolniono stolik %d-os. (indeks %d) - grupa #%d", 
-                           table_type, table_index, msg.group_id);
-                log_message("OBSLUGA: Brudne naczynia: %d", shared_state->dirty_dishes);
+                log_message("OBSLUGA: Grupa #%d zwolniła stolik (naczynia: %d)", 
+                           msg.group_id, shared_state->dirty_dishes);
                 
                 group_to_table_type[group_idx] = 0;
                 group_to_table_index[group_idx] = -1;
-            } else {
-                log_message("OBSLUGA: BŁĄD - nie znaleziono stolika dla grupy #%d!", msg.group_id);
             }
             
             sem_signal(sem_id, SEM_SHARED_STATE);
             
         } else if (msg.mtype == MSG_TYPE_RESERVE_SEATS) {
-            // Komunikat od kierownika - rezerwacja uzgodnionej liczby miejsc
             int seats_to_reserve = msg.group_size;
-            
-            log_message("OBSLUGA: Otrzymano MSG_TYPE_RESERVE_SEATS od kierownika - rezerwacja %d miejsc", 
-                       seats_to_reserve);
             
             sem_wait(sem_id, SEM_SHARED_STATE);
             
-            // Sprawdź czy mamy wystarczająco wolnych miejsc
             int available = shared_state->total_free_seats - shared_state->reserved_seats;
             if (seats_to_reserve <= available) {
                 shared_state->reserved_seats += seats_to_reserve;
-                log_message("OBSLUGA: ZAREZERWOWANO %d miejsc dla kierownika (łącznie zarezerwowanych: %d, wolnych: %d)", 
-                           seats_to_reserve, shared_state->reserved_seats, 
-                           shared_state->total_free_seats - shared_state->reserved_seats);
-            } else {
-                log_message("OBSLUGA: Nie można zarezerwować %d miejsc (dostępnych: %d)", 
-                           seats_to_reserve, available);
+                log_message("OBSLUGA: Rezerwacja kierownika: %d miejsc (zarezerwowanych: %d)", 
+                           seats_to_reserve, shared_state->reserved_seats);
             }
             
             sem_signal(sem_id, SEM_SHARED_STATE);
         }
     }
-    
-    log_message("OBSLUGA: Kończenie pracy obsługi");
-    
+
     if (shared_state != NULL) {
-        if (shmdt(shared_state) == -1) {
-            log_message("OBSLUGA: Błąd shmdt: %s", strerror(errno));
-        }
+        shmdt(shared_state);
     }
     
     return EXIT_SUCCESS;

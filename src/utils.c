@@ -18,16 +18,20 @@ void init_logger(void) {
     
     log_fd = open(log_file, O_CREAT | O_WRONLY | O_APPEND, 0644);
     if (log_fd == -1) {
-        handle_error("init_logger: open log file failed");
+        perror("init_logger: open log file failed");
+        exit(EXIT_FAILURE);
     }
     
-    log_sem_id = semget(LOG_SEM_KEY, 1, IPC_CREAT | 0666);
+    // Minimalne prawa dostępu - tylko właściciel
+    log_sem_id = semget(LOG_SEM_KEY, 1, IPC_CREAT | 0600);
     if (log_sem_id == -1) {
-        handle_error("init_logger: semget log semaphore failed");
+        perror("init_logger: semget log semaphore failed");
+        exit(EXIT_FAILURE);
     }
     
     if (semctl(log_sem_id, 0, SETVAL, 1) == -1) {
-        handle_error("init_logger: semctl SETVAL failed");
+        perror("init_logger: semctl SETVAL failed");
+        exit(EXIT_FAILURE);
     }
 }
 
@@ -96,14 +100,17 @@ void close_logger(void) {
 int create_shared_memory(void) {
     size_t size = sizeof(SharedState);
     
-    shm_id = shmget(SHM_KEY, size, IPC_CREAT | 0666);
+    // Minimalne prawa dostępu - tylko właściciel
+    shm_id = shmget(SHM_KEY, size, IPC_CREAT | 0600);
     if (shm_id == -1) {
-        handle_error("create_shared_memory: shmget failed");
+        perror("create_shared_memory: shmget failed");
+        exit(EXIT_FAILURE);
     }
     
     SharedState *state = (SharedState *)shmat(shm_id, NULL, 0);
     if (state == (void *)-1) {
-        handle_error("create_shared_memory: shmat failed");
+        perror("create_shared_memory: shmat failed");
+        exit(EXIT_FAILURE);
     }
     
     memset(state, 0, size);
@@ -119,74 +126,59 @@ int create_shared_memory(void) {
         handle_error("create_shared_memory: shmdt failed");
     }
     
-    log_message("Utworzono pamięć dzieloną (shm_id=%d, rozmiar=%zu)", shm_id, size);
     return shm_id;
 }
 
 int create_message_queue(void) {
-    msg_id = msgget(MSG_KEY, IPC_CREAT | 0666);
+    // Minimalne prawa dostępu 
+    msg_id = msgget(MSG_KEY, IPC_CREAT | 0600);
     if (msg_id == -1) {
-        handle_error("create_message_queue: msgget failed");
+        perror("create_message_queue: msgget failed");
+        exit(EXIT_FAILURE);
     }
     
-    log_message("Utworzono kolejkę komunikatów (msg_id=%d)", msg_id);
     return msg_id;
 }
 
 int create_semaphores(void) {
-    sem_id = semget(SEM_KEY, 2, IPC_CREAT | 0666);
+    // Minimalne prawa dostępu 
+    sem_id = semget(SEM_KEY, 2, IPC_CREAT | 0600);
     if (sem_id == -1) {
-        handle_error("create_semaphores: semget failed");
+        perror("create_semaphores: semget failed");
+        exit(EXIT_FAILURE);
     }
     
     if (semctl(sem_id, SEM_SHARED_STATE, SETVAL, 1) == -1) {
-        handle_error("create_semaphores: semctl SETVAL SEM_SHARED_STATE failed");
+        perror("create_semaphores: semctl SETVAL SEM_SHARED_STATE failed");
+        exit(EXIT_FAILURE);
     }
     
     if (semctl(sem_id, SEM_FREE_SEATS, SETVAL, MAX_PERSONS) == -1) {
-        handle_error("create_semaphores: semctl SETVAL SEM_FREE_SEATS failed");
+        perror("create_semaphores: semctl SETVAL SEM_FREE_SEATS failed");
+        exit(EXIT_FAILURE);
     }
     
-    log_message("Utworzono zbiór semaforów (sem_id=%d, 2 semafory)", sem_id);
     return sem_id;
 }
 
 void cleanup_ipc(void) {
-    log_message("Rozpoczęto sprzątanie zasobów IPC...");
-    
     if (shm_id != -1) {
-        if (shmctl(shm_id, IPC_RMID, NULL) == -1) {
-            fprintf(stderr, "cleanup_ipc: shmctl IPC_RMID failed: %s\n", strerror(errno));
-        } else {
-            log_message("Usunięto pamięć dzieloną (shm_id=%d)", shm_id);
-        }
+        shmctl(shm_id, IPC_RMID, NULL);
         shm_id = -1;
     }
     
     if (msg_id != -1) {
-        if (msgctl(msg_id, IPC_RMID, NULL) == -1) {
-            fprintf(stderr, "cleanup_ipc: msgctl IPC_RMID failed: %s\n", strerror(errno));
-        } else {
-            log_message("Usunięto kolejkę komunikatów (msg_id=%d)", msg_id);
-        }
+        msgctl(msg_id, IPC_RMID, NULL);
         msg_id = -1;
     }
     
     if (sem_id != -1) {
-        if (semctl(sem_id, 0, IPC_RMID) == -1) {
-            fprintf(stderr, "cleanup_ipc: semctl IPC_RMID failed: %s\n", strerror(errno));
-        } else {
-            log_message("Usunięto zbiór semaforów (sem_id=%d)", sem_id);
-        }
+        semctl(sem_id, 0, IPC_RMID);
         sem_id = -1;
     }
     
-    log_message("Zakończono sprzątanie zasobów IPC (głównych)");
-    
     if (log_sem_id != -1) {
-        if (semctl(log_sem_id, 0, IPC_RMID) == -1) {
-            fprintf(stderr, "cleanup_ipc: log semaphore IPC_RMID failed: %s\n", strerror(errno));
-        }
+        semctl(log_sem_id, 0, IPC_RMID);
         log_sem_id = -1;
     }
     
