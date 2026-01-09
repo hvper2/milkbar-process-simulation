@@ -36,7 +36,7 @@ void sem_signal(int sem_id, int sem_num) {
 }
 
 int find_free_table(int group_size, int *table_type, int *table_index) {
-    // Stoliki 1-osobowe
+    // Stoliki 1-osobowe - tylko dla grup 1-osobowych
     if (group_size == 1) {
         for (int i = 0; i < X1; i++) {
             if (shared_state->table_1[i] == 0) {
@@ -47,10 +47,19 @@ int find_free_table(int group_size, int *table_type, int *table_index) {
         }
     }
     
-    // Stoliki 2-osobowe
+    // Stoliki 2-osobowe - grupy 1-2 os., współdzielenie dla równolicznych
     if (group_size <= 2) {
         for (int i = 0; i < X2; i++) {
-            if (shared_state->table_2[i] == 0) {
+            int occupied = shared_state->table_2[i];
+            
+            // Wolny stolik
+            if (occupied == 0) {
+                *table_type = 2;
+                *table_index = i;
+                return 1;
+            }
+            // Współdzielenie: dwie grupy 1-os. mogą siedzieć przy stoliku 2-os.
+            if (group_size == 1 && occupied == 1 && occupied + group_size <= 2) {
                 *table_type = 2;
                 *table_index = i;
                 return 1;
@@ -58,12 +67,21 @@ int find_free_table(int group_size, int *table_type, int *table_index) {
         }
     }
     
-    // Stoliki 3-osobowe - używamy effective_x3
+    // Stoliki 3-osobowe - używamy effective_x3, współdzielenie dla równolicznych
     int x3_limit = shared_state->effective_x3;
     
     if (group_size <= 3) {
         for (int i = 0; i < x3_limit; i++) {
-            if (shared_state->table_3[i] == 0) {
+            int occupied = shared_state->table_3[i];
+            
+            // Wolny stolik
+            if (occupied == 0) {
+                *table_type = 3;
+                *table_index = i;
+                return 1;
+            }
+            // Współdzielenie: równoliczne grupy mogą dzielić stolik (np. 1+1, 1+1+1)
+            if (occupied == group_size && occupied + group_size <= 3) {
                 *table_type = 3;
                 *table_index = i;
                 return 1;
@@ -71,7 +89,7 @@ int find_free_table(int group_size, int *table_type, int *table_index) {
         }
     }
     
-    // Stoliki 4-osobowe (mogą siadać grupy równoliczne)
+    // Stoliki 4-osobowe - grupy 1-4 os., współdzielenie dla równolicznych
     if (group_size <= 4) {
         for (int i = 0; i < X4; i++) {
             int occupied = shared_state->table_4[i];
@@ -80,7 +98,9 @@ int find_free_table(int group_size, int *table_type, int *table_index) {
                 *table_type = 4;
                 *table_index = i;
                 return 1;
-            } else if (occupied == group_size && occupied + group_size <= 4) {
+            }
+            // Współdzielenie: równoliczne grupy (1+1, 1+1+1, 1+1+1+1, 2+2)
+            if (occupied == group_size && occupied + group_size <= 4) {
                 *table_type = 4;
                 *table_index = i;
                 return 1;
@@ -97,10 +117,12 @@ void allocate_table(int table_type, int table_index, int group_size) {
             shared_state->table_1[table_index] = 1;
             break;
         case 2:
-            shared_state->table_2[table_index] = group_size;
+            // Współdzielenie stolików 2-os. - dodajemy do istniejącej wartości
+            shared_state->table_2[table_index] += group_size;
             break;
         case 3:
-            shared_state->table_3[table_index] = group_size;
+            // Współdzielenie stolików 3-os. - dodajemy do istniejącej wartości
+            shared_state->table_3[table_index] += group_size;
             break;
         case 4:
             shared_state->table_4[table_index] += group_size;
@@ -118,10 +140,18 @@ void free_table(int table_type, int table_index, int group_size) {
             shared_state->table_1[table_index] = 0;
             break;
         case 2:
-            shared_state->table_2[table_index] = 0;
+            // Współdzielenie - odejmujemy tylko swoją część
+            shared_state->table_2[table_index] -= group_size;
+            if (shared_state->table_2[table_index] < 0) {
+                shared_state->table_2[table_index] = 0;
+            }
             break;
         case 3:
-            shared_state->table_3[table_index] = 0;
+            // Współdzielenie - odejmujemy tylko swoją część
+            shared_state->table_3[table_index] -= group_size;
+            if (shared_state->table_3[table_index] < 0) {
+                shared_state->table_3[table_index] = 0;
+            }
             break;
         case 4:
             shared_state->table_4[table_index] -= group_size;
@@ -159,17 +189,8 @@ void signal_handler(int sig) {
         sem_signal(sem_id, SEM_SHARED_STATE);
         
     } else if (sig == SIGUSR2) {
-        log_message("OBSLUGA: Otrzymano SIGUSR2 - rezerwacja miejsc");
-        sem_wait(sem_id, SEM_SHARED_STATE);
-        
-        int reserved = 2;
-        shared_state->reserved_seats += reserved;
-        shared_state->total_free_seats -= reserved;
-        
-        log_message("OBSLUGA: Zarezerwowano %d miejsc (łącznie zarezerwowanych: %d)", 
-                   reserved, shared_state->reserved_seats);
-        
-        sem_signal(sem_id, SEM_SHARED_STATE);
+        // SIGUSR2 to tylko sygnał - liczba miejsc przychodzi przez komunikat
+        log_message("OBSLUGA: Otrzymano SIGUSR2 - oczekuję komunikatu z liczbą miejsc do rezerwacji");
         
     } else if (sig == SIGTERM || sig == SIGINT) {
         log_message("OBSLUGA: Otrzymano sygnał %d - kończę pracę", sig);
@@ -307,6 +328,29 @@ int main(void) {
                 group_to_table_index[group_idx] = -1;
             } else {
                 log_message("OBSLUGA: BŁĄD - nie znaleziono stolika dla grupy #%d!", msg.group_id);
+            }
+            
+            sem_signal(sem_id, SEM_SHARED_STATE);
+            
+        } else if (msg.mtype == MSG_TYPE_RESERVE_SEATS) {
+            // Komunikat od kierownika - rezerwacja uzgodnionej liczby miejsc
+            int seats_to_reserve = msg.group_size;
+            
+            log_message("OBSLUGA: Otrzymano MSG_TYPE_RESERVE_SEATS od kierownika - rezerwacja %d miejsc", 
+                       seats_to_reserve);
+            
+            sem_wait(sem_id, SEM_SHARED_STATE);
+            
+            // Sprawdź czy mamy wystarczająco wolnych miejsc
+            int available = shared_state->total_free_seats - shared_state->reserved_seats;
+            if (seats_to_reserve <= available) {
+                shared_state->reserved_seats += seats_to_reserve;
+                log_message("OBSLUGA: ZAREZERWOWANO %d miejsc dla kierownika (łącznie zarezerwowanych: %d, wolnych: %d)", 
+                           seats_to_reserve, shared_state->reserved_seats, 
+                           shared_state->total_free_seats - shared_state->reserved_seats);
+            } else {
+                log_message("OBSLUGA: Nie można zarezerwować %d miejsc (dostępnych: %d)", 
+                           seats_to_reserve, available);
             }
             
             sem_signal(sem_id, SEM_SHARED_STATE);

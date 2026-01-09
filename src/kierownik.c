@@ -29,6 +29,8 @@ int main(int argc, char *argv[]) {
     
     log_message("KIEROWNIK: PID obsługi=%d, PID kasjera=%d, PGID klientów=%d", pid_obsluga, pid_kasjer, clients_pgid);
     
+    srand(time(NULL) ^ getpid());  // Inicjalizacja generatora losowego
+    
     time_t start_time = time(NULL);
     int sigusr1_sent = 0;
     
@@ -54,10 +56,33 @@ int main(int argc, char *argv[]) {
             }
         }
         
-        // SIGUSR2 - rezerwacja (po 15s)
+        // SIGUSR2 - rezerwacja (po 15s) - z uzgodnieniem liczby miejsc
         if (elapsed >= 15 && elapsed < 16) {
             if (pid_obsluga > 0) {
-                log_message("KIEROWNIK: Wysyłam SIGUSR2 do obsługi (rezerwacja miejsc)");
+                // Losowa liczba miejsc do rezerwacji (2-5)
+                int seats_to_reserve = (rand() % 4) + 2;
+                
+                log_message("KIEROWNIK: Wysyłam SIGUSR2 + komunikat do obsługi (rezerwacja %d miejsc)", seats_to_reserve);
+                
+                // Najpierw wysyłamy komunikat z liczbą miejsc
+                int msg_id = msgget(MSG_KEY, 0);
+                if (msg_id != -1) {
+                    Message reserve_msg;
+                    reserve_msg.mtype = MSG_TYPE_RESERVE_SEATS;
+                    reserve_msg.group_id = getpid();  // ID kierownika
+                    reserve_msg.group_size = seats_to_reserve;  // Liczba miejsc do rezerwacji
+                    reserve_msg.table_type = 0;
+                    reserve_msg.table_index = 0;
+                    
+                    ssize_t msg_size = sizeof(Message) - sizeof(long);
+                    if (msgsnd(msg_id, &reserve_msg, msg_size, 0) == -1) {
+                        log_message("KIEROWNIK: Błąd msgsnd (rezerwacja): %s", strerror(errno));
+                    } else {
+                        log_message("KIEROWNIK: Wysłano komunikat rezerwacji %d miejsc", seats_to_reserve);
+                    }
+                }
+                
+                // Potem wysyłamy sygnał
                 if (kill(pid_obsluga, SIGUSR2) == -1) {
                     log_message("KIEROWNIK: Błąd kill(SIGUSR2): %s", strerror(errno));
                 }

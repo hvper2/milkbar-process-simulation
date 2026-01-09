@@ -29,7 +29,6 @@
 #define X4 2  // stoliki 4-osobowe
 
 // Maksymalna liczba osób w sali: N = X1*1 + X2*2 + X3*3 + X4*4
-// Uwaga: po podwojeniu X3 zwiększa się o X3*3 dodatkowych miejsc
 #define MAX_PERSONS (X1*1 + X2*2 + X3*3 + X4*4)
 #define MAX_PERSONS_DOUBLED (X1*1 + X2*2 + X3_MAX*3 + X4*4)
 
@@ -74,6 +73,7 @@ typedef struct {
 #define MSG_TYPE_SEAT_REQUEST 4   // Klient → Obsługa: "rezerwuj stolik dla grupy"
 #define MSG_TYPE_SEAT_CONFIRM 5   // Obsługa → Klient: "stolik zarezerwowany"
 #define MSG_TYPE_SEAT_REJECT 6    // Obsługa → Klient: "brak miejsca"
+#define MSG_TYPE_RESERVE_SEATS 7  // Kierownik → Obsługa: "zarezerwuj N miejsc"
 
 // Struktura wiadomości
 typedef struct {
