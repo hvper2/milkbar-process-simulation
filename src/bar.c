@@ -25,6 +25,8 @@ void signal_handler(int sig) {
     exit(EXIT_SUCCESS);
 }
 
+static pid_t clients_pgid = -1;  // PGID grupy klientów
+
 pid_t spawn_process(const char *program_path, const char *program_name) {
     pid_t pid = fork();
     
@@ -38,6 +40,40 @@ pid_t spawn_process(const char *program_path, const char *program_name) {
         }
     } else {
         log_message("BAR: Uruchomiono proces %s (PID=%d)", program_name, pid);
+        return pid;
+    }
+    
+    return -1;
+}
+
+// Spawn klienta w specjalnej grupie procesów (do obsługi pożaru)
+pid_t spawn_client(const char *program_path, const char *program_name) {
+    pid_t pid = fork();
+    
+    if (pid == -1) {
+        handle_error("spawn_client: fork failed");
+        return -1;
+    } else if (pid == 0) {
+        // Proces potomny - dołącz do grupy klientów
+        if (clients_pgid > 0) {
+            setpgid(0, clients_pgid);
+        }
+        if (execl(program_path, program_name, (char *)NULL) == -1) {
+            perror("spawn_client: execl failed");
+            exit(EXIT_FAILURE);
+        }
+    } else {
+        // Proces macierzysty
+        if (clients_pgid == -1) {
+            // Pierwszy klient - stwórz nową grupę procesów
+            clients_pgid = pid;
+            setpgid(pid, pid);
+            log_message("BAR: Utworzono grupę klientów (PGID=%d)", clients_pgid);
+        } else {
+            // Kolejni klienci - dołącz do istniejącej grupy
+            setpgid(pid, clients_pgid);
+        }
+        log_message("BAR: Uruchomiono klienta %s (PID=%d, PGID=%d)", program_name, pid, clients_pgid);
         return pid;
     }
     
@@ -75,20 +111,32 @@ int main(void) {
         return EXIT_FAILURE;
     }
     
+    // Najpierw wygeneruj pierwszego klienta, żeby ustalić PGID
+    log_message("BAR: Tworzenie pierwszego klienta dla ustalenia PGID...");
+    pid_t first_client = spawn_client("./bin/klient", "klient");
+    if (first_client == -1) {
+        log_message("BAR: Błąd tworzenia pierwszego klienta");
+    } else {
+        log_message("BAR: Pierwszy klient utworzony (PID=%d), PGID klientów=%d", first_client, clients_pgid);
+    }
+    
     char pid_obsluga_str[32];
     char pid_kasjer_str[32];
+    char clients_pgid_str[32];
     snprintf(pid_obsluga_str, sizeof(pid_obsluga_str), "%d", pid_obsluga);
     snprintf(pid_kasjer_str, sizeof(pid_kasjer_str), "%d", pid_kasjer);
+    snprintf(clients_pgid_str, sizeof(clients_pgid_str), "%d", clients_pgid);
     
     pid_kierownik = fork();
     if (pid_kierownik == -1) {
         handle_error("BAR: fork kierownik failed");
     } else if (pid_kierownik == 0) {
-        execl("./bin/kierownik", "kierownik", pid_obsluga_str, pid_kasjer_str, (char *)NULL);
+        // Przekazujemy PGID klientów jako trzeci argument
+        execl("./bin/kierownik", "kierownik", pid_obsluga_str, pid_kasjer_str, clients_pgid_str, (char *)NULL);
         perror("BAR: execl kierownik failed");
         exit(EXIT_FAILURE);
     } else {
-        log_message("BAR: Uruchomiono proces kierownik (PID=%d)", pid_kierownik);
+        log_message("BAR: Uruchomiono proces kierownik (PID=%d) z PGID klientów=%d", pid_kierownik, clients_pgid);
     }
     
     log_message("BAR: Wszystkie procesy uruchomione pomyślnie");
@@ -117,11 +165,11 @@ int main(void) {
         }
         
         client_counter++;
-        pid_t pid_klient = spawn_process("./bin/klient", "klient");
+        pid_t pid_klient = spawn_client("./bin/klient", "klient");
         if (pid_klient == -1) {
             log_message("BAR: Błąd uruchamiania klienta #%d", client_counter);
         } else {
-            log_message("BAR: Wygenerowano klienta #%d (PID=%d)", client_counter, pid_klient);
+            log_message("BAR: Wygenerowano klienta #%d (PID=%d, PGID=%d)", client_counter, pid_klient, clients_pgid);
         }
     }
     

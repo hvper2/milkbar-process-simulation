@@ -3,6 +3,7 @@
 
 static pid_t pid_obsluga = -1;
 static pid_t pid_kasjer = -1;
+static pid_t clients_pgid = -1;  // PGID grupy klientów
 static int running = 1;
 
 void signal_handler(int sig) {
@@ -22,8 +23,11 @@ int main(int argc, char *argv[]) {
     if (argc > 2) {
         pid_kasjer = atoi(argv[2]);
     }
+    if (argc > 3) {
+        clients_pgid = atoi(argv[3]);
+    }
     
-    log_message("KIEROWNIK: PID obsługi=%d, PID kasjera=%d", pid_obsluga, pid_kasjer);
+    log_message("KIEROWNIK: PID obsługi=%d, PID kasjera=%d, PGID klientów=%d", pid_obsluga, pid_kasjer, clients_pgid);
     
     time_t start_time = time(NULL);
     int sigusr1_sent = 0;
@@ -64,7 +68,22 @@ int main(int argc, char *argv[]) {
     }
     
     // Sygnał pożaru - SIGTERM
-    log_message("KIEROWNIK: Wysyłam sygnał pożaru (SIGTERM) do wszystkich procesów");
+    log_message("KIEROWNIK: POŻAR - Wysyłam sygnał do wszystkich procesów");
+    
+    // sygnał do klientow
+    if (clients_pgid > 0) {
+        log_message("KIEROWNIK: Wysyłam SIGTERM do WSZYSTKICH klientów (PGID=%d)", clients_pgid);
+        if (killpg(clients_pgid, SIGTERM) == -1) {
+            log_message("KIEROWNIK: Błąd killpg(SIGTERM do klientów): %s", strerror(errno));
+        } else {
+            log_message("KIEROWNIK: Sygnał pożaru wysłany do grupy klientów");
+        }
+    }
+    
+    sleep(1);
+    
+    // sygnał do obsługi i kasjera
+    log_message("KIEROWNIK: Klienci ewakuowani - kończę pracę obsługi i kasy");
     
     if (pid_obsluga > 0) {
         if (kill(pid_obsluga, SIGTERM) == -1) {

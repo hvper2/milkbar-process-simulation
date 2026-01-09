@@ -1,8 +1,9 @@
 #ifndef COMMON_H
 #define COMMON_H
 
-// Definicja dla funkcji POSIX (kill, waitpid itp.)
+// Definicja dla funkcji POSIX (kill, waitpid, killpg itp.)
 #define _POSIX_C_SOURCE 200809L
+#define _XOPEN_SOURCE 700
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -61,6 +62,9 @@ typedef struct {
     int effective_x3;     // Aktualna liczba stolików 3-os. (X3 lub X3*2)
     
     int total_free_seats; // Aktualna liczba wolnych miejsc
+    
+    pid_t clients_pgid;   // PGID grupy klientów (do sygnalizacji pożaru)
+    int fire_alarm;       // Flaga pożaru (1 = pożar)
 } SharedState;
 
 //  kolejka komunikatów - typy wiadomości
