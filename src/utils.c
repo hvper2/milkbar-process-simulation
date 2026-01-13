@@ -16,10 +16,29 @@ void handle_error(const char *msg) {
 void init_logger(void) {
     const char *log_file = "logs/symulacja.log";
     
-    log_fd = open(log_file, O_CREAT | O_WRONLY | O_APPEND, 0644);
-    if (log_fd == -1) {
-        perror("init_logger: open log file failed");
-        exit(EXIT_FAILURE);
+    int test_fd = open(log_file, O_RDONLY);
+    if (test_fd == -1 && errno == ENOENT) {
+
+        log_fd = creat(log_file, 0644);
+        if (log_fd == -1) {
+            perror("init_logger: creat log file failed");
+            exit(EXIT_FAILURE);
+        }
+        close(log_fd);
+        log_fd = open(log_file, O_WRONLY | O_APPEND, 0644);
+        if (log_fd == -1) {
+            perror("init_logger: open log file (append) failed");
+            exit(EXIT_FAILURE);
+        }
+    } else {
+        if (test_fd != -1) {
+            close(test_fd);
+        }
+        log_fd = open(log_file, O_WRONLY | O_APPEND, 0644);
+        if (log_fd == -1) {
+            perror("init_logger: open log file failed");
+            exit(EXIT_FAILURE);
+        }
     }
     
     // Minimalne prawa dostępu - tylko właściciel
@@ -183,6 +202,13 @@ void cleanup_ipc(void) {
     }
     
     close_logger();
+    
+    const char *log_file = "logs/symulacja.log";
+    if (unlink(log_file) == -1) {
+        if (errno != ENOENT) {
+            perror("cleanup_ipc: unlink log file failed");
+        }
+    }
 }
 
 SharedState* get_shared_memory(void) {

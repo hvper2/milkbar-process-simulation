@@ -87,8 +87,6 @@ int main(void) {
         return EXIT_FAILURE;
     }
     
-    sleep(1);
-    
     if (!running) {
         return EXIT_SUCCESS;
     }
