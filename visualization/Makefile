@@ -1,15 +1,12 @@
 CC = gcc
-CFLAGS = -Wall -Wextra -std=c11 -g
-INCLUDES = -I../include
-TARGET = viz
-SRC = viz.c
-
-all: $(TARGET)
-
-$(TARGET): $(SRC)
-	$(CC) $(CFLAGS) $(INCLUDES) -o $(TARGET) $(SRC)
-
-clean:
-	rm -f $(TARGET)
+CFLAGS = -Wall -Wextra -std=c11 -g -I../include
 
 .PHONY: all clean
+
+all: viz
+
+viz: viz.c
+	$(CC) $(CFLAGS) -o $@ $<
+
+clean:
+	rm -f viz
