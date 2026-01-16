@@ -9,17 +9,9 @@ static int running = 1;
 void signal_handler(int sig) {
     (void)sig;
     running = 0;
-    
-    if (pid_kasjer > 0) kill(pid_kasjer, SIGTERM);
-    if (pid_obsluga > 0) kill(pid_obsluga, SIGTERM);
-    if (pid_kierownik > 0) kill(pid_kierownik, SIGTERM);
-    
-    sleep(1);
-    cleanup_ipc();
-    exit(EXIT_SUCCESS);
 }
 
-static pid_t clients_pgid = -1;  // PGID grupy klientów
+static pid_t clients_pgid = -1;
 
 pid_t spawn_process(const char *program_path, const char *program_name) {
     pid_t pid = fork();
@@ -36,8 +28,7 @@ pid_t spawn_process(const char *program_path, const char *program_name) {
     return pid;
 }
 
-// Spawn klienta w specjalnej grupie procesów (do obsługi pożaru)
-pid_t spawn_client(const char *program_path, const char *program_name) {
+pid_t spawn_client(const char *program_path, const char *program_name, const char *group_size_str) {
     pid_t pid = fork();
     
     if (pid == -1) {
@@ -47,7 +38,7 @@ pid_t spawn_client(const char *program_path, const char *program_name) {
         if (clients_pgid > 0) {
             setpgid(0, clients_pgid);
         }
-        if (execl(program_path, program_name, (char *)NULL) == -1) {
+        if (execl(program_path, program_name, group_size_str, (char *)NULL) == -1) {
             perror("spawn_client: execl failed");
             exit(EXIT_FAILURE);
         }
@@ -66,14 +57,13 @@ pid_t spawn_client(const char *program_path, const char *program_name) {
 int main(void) {
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
+    signal(SIGUSR1, signal_handler);
     
-    // Tworzenie zasobów IPC
     init_logger();
     create_shared_memory();
     create_message_queue();
     create_semaphores();
     
-    // Uruchomienie procesów
     pid_kasjer = spawn_process("./bin/kasjer", "kasjer");
     if (pid_kasjer == -1) {
         cleanup_ipc();
@@ -86,8 +76,10 @@ int main(void) {
         return EXIT_FAILURE;
     }
     
-    // Pierwszy klient ustala PGID grupy
-    pid_t first_client = spawn_client("./bin/klient", "klient");
+    int first_group_size = (rand() % 3) + 1;
+    char first_group_size_str[8];
+    snprintf(first_group_size_str, sizeof(first_group_size_str), "%d", first_group_size);
+    pid_t first_client = spawn_client("./bin/klient", "klient", first_group_size_str);
     if (first_client == -1) {
         log_message("BAR: Błąd tworzenia pierwszego klienta");
     }
@@ -110,10 +102,20 @@ int main(void) {
     
     log_message("BAR: Procesy uruchomione (kasjer, obsługa, kierownik)");
     
-    // Generator klientów
+    SharedState *shared_state = get_shared_memory();
+    if (shared_state == NULL) {
+        cleanup_ipc();
+        return EXIT_FAILURE;
+    }
+    int sem_id = get_semaphores();
+    if (sem_id == -1) {
+        shmdt(shared_state);
+        cleanup_ipc();
+        return EXIT_FAILURE;
+    }
+    
     time_t start_time = time(NULL);
     time_t current_time;
-    int client_counter = 0;
     
     srand(time(NULL));
     
@@ -124,29 +126,50 @@ int main(void) {
             break;
         }
         
+        struct sembuf sem_op;
+        sem_op.sem_num = SEM_SHARED_STATE;
+        sem_op.sem_op = -1;
+        sem_op.sem_flg = 0;
+        if (semop(sem_id, &sem_op, 1) == -1 && errno != EINTR) {
+        } else {
+            if (shared_state->fire_alarm) {
+                log_message("BAR: Pożar! Przestaję generować klientów.");
+                sem_op.sem_op = 1;
+                semop(sem_id, &sem_op, 1);
+                break;
+            }
+            sem_op.sem_op = 1;
+            semop(sem_id, &sem_op, 1);
+        }
+        
         sleep(CLIENT_INTERVAL);
         
         if (!running) {
             break;
         }
         
-        client_counter++;
-        spawn_client("./bin/klient", "klient");
+        int status;
+        while (waitpid(-1, &status, WNOHANG) > 0) {
+        }
+        
+        int group_size = (rand() % 3) + 1;
+        char group_size_str[8];
+        snprintf(group_size_str, sizeof(group_size_str), "%d", group_size);
+        spawn_client("./bin/klient", "klient", group_size_str);
     }
     
-    log_message("BAR: Wygenerowano %d klientów w ciągu %ds", client_counter, SIMULATION_TIME);
+    if (shared_state != NULL) {
+        shmdt(shared_state);
+    }
     
-    // Czekanie na zakończenie procesów
     int status;
     
     if (pid_kasjer > 0) waitpid(pid_kasjer, &status, 0);
     if (pid_obsluga > 0) waitpid(pid_obsluga, &status, 0);
     if (pid_kierownik > 0) waitpid(pid_kierownik, &status, 0);
     
-    // Czekaj na wszystkich klientów
     while (waitpid(-1, &status, 0) > 0) { }
     
-    // Sprzątanie zasobów IPC
     cleanup_ipc();
 
     return EXIT_SUCCESS;

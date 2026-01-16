@@ -1,9 +1,10 @@
 #ifndef COMMON_H
 #define COMMON_H
 
-// Definicja dla funkcji POSIX (kill, waitpid, killpg itp.)
+// Definicja dla funkcji POSIX (kill, waitpid, killpg, usleep itp.)
 #define _POSIX_C_SOURCE 200809L
 #define _XOPEN_SOURCE 700
+#define _DEFAULT_SOURCE
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -32,14 +33,26 @@
 #define MAX_PERSONS (X1*1 + X2*2 + X3*3 + X4*4)
 #define MAX_PERSONS_DOUBLED (X1*1 + X2*2 + X3_MAX*3 + X4*4)
 
-// Czas symulacji (w sekundach) - można zmienić
+// Czas symulacji (w sekundach)
 #define SIMULATION_TIME 30
 
-// Tempo napływania klientów (odstęp w sekundach)
-#define CLIENT_INTERVAL 2
+// Tempo napływania klientów (w sekundach)
+#define CLIENT_INTERVAL 1
 
-// Prawdopodobieństwo, że klient nie zamawia (5% = 5 na 100)
+// Prawdopodobieństwo, że klient nie zamawia (w %)
 #define NO_ORDER_PROBABILITY 5
+
+// Czas jedzenia klienta (w sekundach)
+#define EATING_TIME 20
+
+// Czas wywołania sygnałów przez kierownika (w sekundach od startu symulacji)
+// Ustaw na 0, aby wyłączyć dany sygnał w symulacji
+#define SIGNAL1_TIME 4   // Sygnał 1 (SIGUSR1) - podwojenie stolików X3 (0 = wyłączony)
+#define SIGNAL2_TIME 7   // Sygnał 2 (SIGUSR2) - rezerwacja miejsc (0 = wyłączony)
+#define SIGNAL3_TIME 15  // Sygnał 3 (SIGTERM) - pożar (0 = wyłączony)
+
+// Liczba stolików do rezerwacji przez kierownika (sygnał 2)
+#define RESERVED_TABLE_COUNT 3
 
 // Klucz bazowy dla zasobów IPC
 #define IPC_KEY_BASE 0x12345678
@@ -50,10 +63,17 @@
 
 // structura przechowująca stan sali w pamięci dzielonej
 typedef struct {
-    int table_1[X1];      // 0 = wolny, 1 = zajęty (grupa 1-os.)
-    int table_2[X2];      // 0 = wolny, 1-2 = zajęte miejsca (grupa 2-os.)
-    int table_3[X3_MAX];  // 0 = wolny, 1-3 = zajęte miejsca (tablica na podwojenie)
-    int table_4[X4];      // 0 = wolny, 1-4 = zajęte miejsca (grupa 4-os.)
+    int table_1[X1];      // 0 = wolny, 1 = zajęty (grupa 1-os.), -1 = zarezerwowany
+    int table_2[X2];      // 0 = wolny, 1-2 = zajęte miejsca (grupa 2-os.), -1 = zarezerwowany
+    int table_3[X3_MAX];  // 0 = wolny, 1-3 = zajęte miejsca (tablica na podwojenie), -1 = zarezerwowany
+    int table_4[X4];      // 0 = wolny, 1-4 = zajęte miejsca (grupa 4-os.), -1 = zarezerwowany
+    
+    // Tablice group_id dla każdego miejsca przy stoliku (dla wizualizacji)
+    // 0 = wolne miejsce, >0 = group_id grupy zajmującej miejsce
+    int table_1_groups[X1][1];        // [stolik][miejsce]
+    int table_2_groups[X2][2];        // [stolik][miejsce]
+    int table_3_groups[X3_MAX][3];    // [stolik][miejsce]
+    int table_4_groups[X4][4];        // [stolik][miejsce]
     
     int reserved_seats;   // Liczba zarezerwowanych miejsc (przez kierownika)
     int dirty_dishes;     // Licznik brudnych naczyń

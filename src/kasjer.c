@@ -39,11 +39,10 @@ int main(void) {
             }
         }
         
-        // Przetwarzanie płatności
-        sleep(1);
+        log_message("KASJER: Otrzymał płatność od grupy #%d (rozmiar: %d)", msg.group_id, msg.group_size);
         
         Message paid_msg;
-        paid_msg.mtype = MSG_TYPE_PAID;
+        paid_msg.mtype = 2000 + msg.group_id;
         paid_msg.group_id = msg.group_id;
         paid_msg.group_size = msg.group_size;
         paid_msg.table_type = 0;
@@ -53,6 +52,24 @@ int main(void) {
             if (!running) break;
             continue;
         }
+        
+        log_message("KASJER: Płatność przetworzona - grupa #%d może odebrać danie", msg.group_id);
+    }
+    
+    int shm_id = shmget(SHM_KEY, sizeof(SharedState), 0);
+    int is_fire = 0;
+    if (shm_id != -1) {
+        SharedState *state = (SharedState *)shmat(shm_id, NULL, 0);
+        if (state != (void *)-1) {
+            is_fire = state->fire_alarm;
+            shmdt(state);
+        }
+    }
+    
+    if (is_fire) {
+        log_message("KASJER: Kasa zamknięta (pożar)");
+    } else {
+        log_message("KASJER: Kasa zamknięta");
     }
     
     return EXIT_SUCCESS;

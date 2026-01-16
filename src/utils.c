@@ -16,32 +16,20 @@ void handle_error(const char *msg) {
 void init_logger(void) {
     const char *log_file = "logs/symulacja.log";
     
-    int test_fd = open(log_file, O_RDONLY);
-    if (test_fd == -1 && errno == ENOENT) {
-
-        log_fd = creat(log_file, 0644);
-        if (log_fd == -1) {
-            perror("init_logger: creat log file failed");
-            exit(EXIT_FAILURE);
-        }
-        close(log_fd);
-        log_fd = open(log_file, O_WRONLY | O_APPEND, 0644);
-        if (log_fd == -1) {
-            perror("init_logger: open log file (append) failed");
-            exit(EXIT_FAILURE);
-        }
-    } else {
-        if (test_fd != -1) {
-            close(test_fd);
-        }
-        log_fd = open(log_file, O_WRONLY | O_APPEND, 0644);
-        if (log_fd == -1) {
-            perror("init_logger: open log file failed");
-            exit(EXIT_FAILURE);
-        }
+    unlink(log_file);
+    
+    log_fd = creat(log_file, 0644);
+    if (log_fd == -1) {
+        perror("init_logger: creat log file failed");
+        exit(EXIT_FAILURE);
+    }
+    close(log_fd);
+    log_fd = open(log_file, O_WRONLY | O_APPEND, 0644);
+    if (log_fd == -1) {
+        perror("init_logger: open log file (append) failed");
+        exit(EXIT_FAILURE);
     }
     
-    // Minimalne prawa dostępu - tylko właściciel
     log_sem_id = semget(LOG_SEM_KEY, 1, IPC_CREAT | 0600);
     if (log_sem_id == -1) {
         perror("init_logger: semget log semaphore failed");
@@ -91,7 +79,10 @@ void log_message(const char *format, ...) {
     sem_op.sem_op = -1;
     sem_op.sem_flg = 0;
     
-    if (semop(log_sem_id, &sem_op, 1) == -1) {
+    while (semop(log_sem_id, &sem_op, 1) == -1) {
+        if (errno == EINTR) {
+            continue;
+        }
         fprintf(stdout, "%s", log_entry);
         return;
     }
@@ -106,7 +97,8 @@ void log_message(const char *format, ...) {
     }
     
     sem_op.sem_op = 1;
-    semop(log_sem_id, &sem_op, 1);
+    while (semop(log_sem_id, &sem_op, 1) == -1 && errno == EINTR) {
+    }
 }
 
 void close_logger(void) {
@@ -119,7 +111,6 @@ void close_logger(void) {
 int create_shared_memory(void) {
     size_t size = sizeof(SharedState);
     
-    // Minimalne prawa dostępu - tylko właściciel
     shm_id = shmget(SHM_KEY, size, IPC_CREAT | 0600);
     if (shm_id == -1) {
         perror("create_shared_memory: shmget failed");
@@ -137,9 +128,9 @@ int create_shared_memory(void) {
     state->reserved_seats = 0;
     state->dirty_dishes = 0;
     state->x3_doubled = 0;
-    state->effective_x3 = X3;  // Początkowo X3 stolików, może być podwojone
-    state->clients_pgid = -1;  // Będzie ustawione przez bar
-    state->fire_alarm = 0;     // Brak pożaru na początku
+    state->effective_x3 = X3;
+    state->clients_pgid = -1;
+    state->fire_alarm = 0;
     
     if (shmdt(state) == -1) {
         handle_error("create_shared_memory: shmdt failed");
@@ -149,7 +140,6 @@ int create_shared_memory(void) {
 }
 
 int create_message_queue(void) {
-    // Minimalne prawa dostępu 
     msg_id = msgget(MSG_KEY, IPC_CREAT | 0600);
     if (msg_id == -1) {
         perror("create_message_queue: msgget failed");
@@ -160,7 +150,6 @@ int create_message_queue(void) {
 }
 
 int create_semaphores(void) {
-    // Minimalne prawa dostępu 
     sem_id = semget(SEM_KEY, 2, IPC_CREAT | 0600);
     if (sem_id == -1) {
         perror("create_semaphores: semget failed");
@@ -202,13 +191,6 @@ void cleanup_ipc(void) {
     }
     
     close_logger();
-    
-    const char *log_file = "logs/symulacja.log";
-    if (unlink(log_file) == -1) {
-        if (errno != ENOENT) {
-            perror("cleanup_ipc: unlink log file failed");
-        }
-    }
 }
 
 SharedState* get_shared_memory(void) {
