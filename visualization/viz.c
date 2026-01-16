@@ -18,8 +18,13 @@
 #define CLEAR_SCREEN "\033[2J\033[H"
 
 static SharedState *shared_state = NULL;
-static int shm_id = -1;
 static int sem_id = -1;
+static volatile int running = 1;
+
+void signal_handler(int sig) {
+    (void)sig;
+    running = 0;
+}
 
 void sem_wait(int sem_id, int sem_num) {
     struct sembuf sem_op;
@@ -127,7 +132,7 @@ void visualize(void) {
     sem_wait(sem_id, SEM_SHARED_STATE);
     
     if (shared_state->reserved_seats > 0) {
-        printf("  " RED "⚠ Zarezerwowane stoliki: %d miejsc (całe stoliki zarezerwowane do końca symulacji)" RESET "\n", 
+        printf("  " RED "Zarezerwowane stoliki: %d miejsc (całe stoliki zarezerwowane do końca symulacji)" RESET "\n", 
                shared_state->reserved_seats);
     }
 
@@ -172,7 +177,10 @@ void visualize(void) {
 }
 
 int main(void) {
-    shm_id = shmget(SHM_KEY, sizeof(SharedState), 0);
+    signal(SIGINT, signal_handler);
+    signal(SIGTERM, signal_handler);
+    
+    int shm_id = shmget(SHM_KEY, sizeof(SharedState), 0);
     if (shm_id == -1) {
         fprintf(stderr, "Błąd: Nie można otworzyć shared memory. Upewnij się, że ./bin/bar jest uruchomiony.\n");
         return EXIT_FAILURE;
@@ -191,10 +199,9 @@ int main(void) {
         return EXIT_FAILURE;
     }
     
-    printf("Wizualizacja uruchomiona. Odświeżanie co 1 sekundę...\n");
     sleep(1);
     
-    while (1) {
+    while (running) {
         visualize();
         sleep(1);
     }
