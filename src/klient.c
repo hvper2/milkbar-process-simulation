@@ -5,13 +5,25 @@ static int msg_queue_id = -1;
 static int group_id = 0;
 static int group_size = 0;
 static int is_parent = 1;
-static int person_index = 0;
 static int running = 1;
 static int can_start_eating = 0;
 static int can_exit = 0;
 static pid_t *child_pids = NULL;
-static int eating_time = 0;
 
+// Zabija procesy potomne i zwalnia pamięć child_pids.
+static void cleanup_children(int send_signal) {
+    if (group_size > 1 && child_pids != NULL && send_signal > 0) {
+        for (int i = 0; i < group_size - 1; i++) {
+            kill(child_pids[i], send_signal);
+        }
+    }
+    if (child_pids != NULL) {
+        free(child_pids);
+        child_pids = NULL;
+    }
+}
+
+// Sprawdza, czy alarm pożaru jest aktywny
 static int check_fire_alarm(void) {
     int shm_id = shmget(SHM_KEY, sizeof(SharedState), 0);
     if (shm_id != -1) {
@@ -25,12 +37,14 @@ static int check_fire_alarm(void) {
     return 0;
 }
 
+// Loguje ewakuację klienta w przypadku pożaru
 static void log_evacuation(int gid) {
     if (check_fire_alarm()) {
         log_message("KLIENT #%d: POŻAR! Przerwano jedzenie - ewakuacja", gid);
     }
 }
 
+// Obsługa sygnałów
 void signal_handler(int sig) {
     if (sig == SIGUSR1) {
         can_start_eating = 1;
@@ -55,7 +69,6 @@ int main(int argc, char *argv[]) {
     
     group_id = getpid();
     is_parent = 1;
-    person_index = 0;
     
     log_message("KLIENT #%d: Grupa %d-osobowa wchodzi do baru", group_id, group_size);
     
@@ -80,17 +93,14 @@ int main(int argc, char *argv[]) {
             
             if (child_pid == -1) {
                 perror("KLIENT: fork failed");
-                // Zabij już utworzone procesy potomne
                 for (int j = 0; j < i; j++) {
                     kill(child_pids[j], SIGTERM);
                 }
-                free(child_pids);
+                cleanup_children(0);
                 return EXIT_FAILURE;
             } else if (child_pid == 0) {
                 is_parent = 0;
-                person_index = i + 1;
-                pid_t parent_pid = getppid();
-                group_id = parent_pid;
+                group_id = getppid();
                 break;
             } else {
                 child_pids[i] = child_pid;
@@ -104,14 +114,7 @@ int main(int argc, char *argv[]) {
         
         if (!orders) {
             log_message("KLIENT #%d: Nie zamawia - wychodzi (5%% przypadek)", group_id);
-            if (group_size > 1 && child_pids != NULL) {
-                for (int i = 0; i < group_size - 1; i++) {
-                    kill(child_pids[i], SIGTERM);
-                }
-            }
-            if (child_pids != NULL) {
-                free(child_pids);
-            }
+            cleanup_children(SIGTERM);
             return EXIT_SUCCESS;
         }
     }
@@ -128,14 +131,7 @@ int main(int argc, char *argv[]) {
         
         if (msgsnd(msg_queue_id, &seat_request, msg_size, 0) == -1) {
             perror("KLIENT: msgsnd (rezerwacja) failed");
-            if (group_size > 1 && child_pids != NULL) {
-                for (int i = 0; i < group_size - 1; i++) {
-                    kill(child_pids[i], SIGTERM);
-                }
-            }
-            if (child_pids != NULL) {
-                free(child_pids);
-            }
+            cleanup_children(SIGTERM);
             return EXIT_FAILURE;
         }
         
@@ -146,38 +142,17 @@ int main(int argc, char *argv[]) {
         if (received == -1) {
             if (errno == EINTR && !running) {
                 log_evacuation(group_id);
-                if (group_size > 1 && child_pids != NULL) {
-                    for (int i = 0; i < group_size - 1; i++) {
-                        kill(child_pids[i], SIGTERM);
-                    }
-                }
-                if (child_pids != NULL) {
-                    free(child_pids);
-                }
+                cleanup_children(SIGTERM);
                 return EXIT_SUCCESS;
             }
             log_message("KLIENT #%d: Błąd msgrcv (oczekiwanie na stolik): %s", group_id, strerror(errno));
-            if (group_size > 1 && child_pids != NULL) {
-                for (int i = 0; i < group_size - 1; i++) {
-                    kill(child_pids[i], SIGTERM);
-                }
-            }
-            if (child_pids != NULL) {
-                free(child_pids);
-            }
+            cleanup_children(SIGTERM);
             return EXIT_FAILURE;
         }
         
         if (seat_response.table_type == 0 || seat_response.table_index < 0) {
             log_message("KLIENT #%d: Brak wolnych miejsc - wychodzi BEZ odbierania dania", group_id);
-            if (group_size > 1 && child_pids != NULL) {
-                for (int i = 0; i < group_size - 1; i++) {
-                    kill(child_pids[i], SIGTERM);
-                }
-            }
-            if (child_pids != NULL) {
-                free(child_pids);
-            }
+            cleanup_children(SIGTERM);
             return EXIT_SUCCESS;
         }
         
@@ -193,15 +168,11 @@ int main(int argc, char *argv[]) {
         
         if (msgsnd(msg_queue_id, &payment_msg, msg_size, 0) == -1) {
             if (!running) {
-                if (child_pids != NULL) {
-                    free(child_pids);
-                }
+                cleanup_children(0);
                 return EXIT_SUCCESS;
             }
             perror("KLIENT: msgsnd (płatność) failed");
-            if (child_pids != NULL) {
-                free(child_pids);
-            }
+            cleanup_children(0);
             return EXIT_FAILURE;
         }
         
@@ -212,15 +183,11 @@ int main(int argc, char *argv[]) {
         if (payment_received == -1) {
             if (errno == EINTR && !running) {
                 log_evacuation(group_id);
-                if (child_pids != NULL) {
-                    free(child_pids);
-                }
+                cleanup_children(0);
                 return EXIT_SUCCESS;
             }
             log_message("KLIENT #%d: Błąd oczekiwania na potwierdzenie płatności", group_id);
-            if (child_pids != NULL) {
-                free(child_pids);
-            }
+            cleanup_children(0);
             return EXIT_FAILURE;
         }
         
@@ -228,13 +195,9 @@ int main(int argc, char *argv[]) {
         
         if (!running) {
             log_evacuation(group_id);
-            if (child_pids != NULL) {
-                free(child_pids);
-            }
+            cleanup_children(0);
             return EXIT_SUCCESS;
         }
-        
-        eating_time = EATING_TIME;
         
         if (group_size > 1 && child_pids != NULL) {
             for (int i = 0; i < group_size - 1; i++) {
@@ -242,7 +205,7 @@ int main(int argc, char *argv[]) {
             }
         }
         
-        log_message("KLIENT #%d: Rozpoczyna jedzenie (czas: %ds)", group_id, eating_time);
+        log_message("KLIENT #%d: Rozpoczyna jedzenie (czas: %ds)", group_id, EATING_TIME);
     } else {
         while (!can_start_eating && running) {
             pause();
@@ -261,25 +224,17 @@ int main(int argc, char *argv[]) {
     if (!running) {
         if (is_parent) {
             log_evacuation(group_id);
-            if (child_pids != NULL) {
-                free(child_pids);
-            }
+            cleanup_children(0);
         }
         return EXIT_SUCCESS;
     }
     
-    if (!is_parent) {
-        eating_time = EATING_TIME;
-    }
-    
-    sleep(eating_time);
+    sleep(EATING_TIME);
     
     if (!running) {
         if (is_parent) {
             log_evacuation(group_id);
-            if (child_pids != NULL) {
-                free(child_pids);
-            }
+            cleanup_children(0);
         }
         return EXIT_SUCCESS;
     }
@@ -308,23 +263,16 @@ int main(int argc, char *argv[]) {
         ssize_t msg_size = sizeof(Message) - sizeof(long);
         if (msgsnd(msg_queue_id, &dishes_msg, msg_size, 0) == -1) {
             if (!running) {
-                if (child_pids != NULL) {
-                    free(child_pids);
-                }
+                cleanup_children(0);
                 return EXIT_SUCCESS;
             }
             perror("KLIENT: msgsnd (naczynia) failed");
-            if (child_pids != NULL) {
-                free(child_pids);
-            }
+            cleanup_children(0);
             return EXIT_FAILURE;
         }
         
         log_message("KLIENT #%d: Oddał naczynia (%d szt.) i wychodzi z baru", group_id, group_size);
-        
-        if (child_pids != NULL) {
-            free(child_pids);
-        }
+        cleanup_children(0);
     } else {
         while (!can_exit && running) {
             pause();

@@ -6,6 +6,7 @@ static pid_t pid_kasjer = -1;
 static pid_t clients_pgid = -1;
 static int running = 1;
 
+// Obsługa sygnałów
 void signal_handler(int sig) {
     (void)sig;
     running = 0;
@@ -18,8 +19,6 @@ int main(int argc, char *argv[]) {
     if (argc > 1) pid_obsluga = atoi(argv[1]);
     if (argc > 2) pid_kasjer = atoi(argv[2]);
     if (argc > 3) clients_pgid = atoi(argv[3]);
-    
-    srand(time(NULL) ^ getpid());
     
     time_t start_time = time(NULL);
     int sigusr1_sent = 0;
@@ -38,7 +37,7 @@ int main(int argc, char *argv[]) {
             }
         }
         
-        if (SIGNAL2_TIME > 0 && !sigusr2_sent && elapsed >= SIGNAL2_TIME && elapsed < SIGNAL2_TIME + 1) {
+        if (SIGNAL2_TIME > 0 && !sigusr2_sent && elapsed >= SIGNAL2_TIME) {
             if (pid_obsluga > 0) {
                 int tables_to_reserve = RESERVED_TABLE_COUNT;
                 

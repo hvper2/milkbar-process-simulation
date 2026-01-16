@@ -1,7 +1,6 @@
 #ifndef COMMON_H
 #define COMMON_H
 
-// Definicja dla funkcji POSIX (kill, waitpid, killpg, usleep itp.)
 #define _POSIX_C_SOURCE 200809L
 #define _XOPEN_SOURCE 700
 #define _DEFAULT_SOURCE
@@ -25,7 +24,7 @@
 // Liczba stolików każdego typu
 #define X1 4  // stoliki 1-osobowe
 #define X2 3  // stoliki 2-osobowe
-#define X3 2  // stoliki 3-osobowe (bazowa liczba, może być podwojona)
+#define X3 2  // stoliki 3-osobowe (bazowa liczba)
 #define X3_MAX (X3 * 2)  // maksymalna liczba po podwojeniu
 #define X4 2  // stoliki 4-osobowe
 
@@ -43,23 +42,22 @@
 #define NO_ORDER_PROBABILITY 5
 
 // Czas jedzenia klienta (w sekundach)
-#define EATING_TIME 20
+#define EATING_TIME 3
 
 // Czas wywołania sygnałów przez kierownika (w sekundach od startu symulacji)
-// Ustaw na 0, aby wyłączyć dany sygnał w symulacji
-#define SIGNAL1_TIME 4   // Sygnał 1 (SIGUSR1) - podwojenie stolików X3 (0 = wyłączony)
-#define SIGNAL2_TIME 7   // Sygnał 2 (SIGUSR2) - rezerwacja miejsc (0 = wyłączony)
-#define SIGNAL3_TIME 15  // Sygnał 3 (SIGTERM) - pożar (0 = wyłączony)
+#define SIGNAL1_TIME 10   // Sygnał 1 (SIGUSR1)
+#define SIGNAL2_TIME 15   // Sygnał 2 (SIGUSR2)
+#define SIGNAL3_TIME 29  // Sygnał 3 (SIGTERM) 
 
 // Liczba stolików do rezerwacji przez kierownika (sygnał 2)
-#define RESERVED_TABLE_COUNT 3
+#define RESERVED_TABLE_COUNT 2
 
 // Klucz bazowy dla zasobów IPC
 #define IPC_KEY_BASE 0x12345678
-#define SHM_KEY (IPC_KEY_BASE + 1)
+#define SHM_KEY (IPC_KEY_BASE + 1) 
 #define MSG_KEY (IPC_KEY_BASE + 2)
-#define SEM_KEY (IPC_KEY_BASE + 3)
-#define LOG_SEM_KEY (IPC_KEY_BASE + 4)
+#define SEM_KEY (IPC_KEY_BASE + 3)  
+#define LOG_SEM_KEY (IPC_KEY_BASE + 4) 
 
 // structura przechowująca stan sali w pamięci dzielonej
 typedef struct {
@@ -69,11 +67,10 @@ typedef struct {
     int table_4[X4];      // 0 = wolny, 1-4 = zajęte miejsca (grupa 4-os.), -1 = zarezerwowany
     
     // Tablice group_id dla każdego miejsca przy stoliku (dla wizualizacji)
-    // 0 = wolne miejsce, >0 = group_id grupy zajmującej miejsce
-    int table_1_groups[X1][1];        // [stolik][miejsce]
-    int table_2_groups[X2][2];        // [stolik][miejsce]
-    int table_3_groups[X3_MAX][3];    // [stolik][miejsce]
-    int table_4_groups[X4][4];        // [stolik][miejsce]
+    int table_1_groups[X1][1];          
+    int table_2_groups[X2][2];          
+    int table_3_groups[X3_MAX][3];      
+    int table_4_groups[X4][4];        
     
     int reserved_seats;   // Liczba zarezerwowanych miejsc (przez kierownika)
     int dirty_dishes;     // Licznik brudnych naczyń
@@ -86,9 +83,8 @@ typedef struct {
     int fire_alarm;       // Flaga pożaru (1 = pożar)
 } SharedState;
 
-//  kolejka komunikatów - typy wiadomości
+//  kolejka komunikatów 
 #define MSG_TYPE_PAYMENT 1        // Klient → Kasjer: "chcę zapłacić"
-#define MSG_TYPE_PAID 2           // Kasjer → Obsługa: "opłacone i wydane"
 #define MSG_TYPE_DISHES 3         // Klient → Obsługa: "oddajemy naczynia"
 #define MSG_TYPE_SEAT_REQUEST 4   // Klient → Obsługa: "rezerwuj stolik dla grupy"
 #define MSG_TYPE_SEAT_CONFIRM 5   // Obsługa → Klient: "stolik zarezerwowany"
@@ -97,16 +93,14 @@ typedef struct {
 
 // Struktura wiadomości
 typedef struct {
-    long mtype;           // Typ wiadomości (obowiązkowe pole)
+    long mtype;           // Typ wiadomości
     int group_id;         // ID grupy klienta
-    int group_size;       // Rozmiar grupy (1, 2, 3)
-    int table_type;       // Typ stolika (1, 2, 3, 4)
+    int group_size;       // Rozmiar grupy
+    int table_type;       // Typ stolika
     int table_index;      // Indeks stolika w tablicy
 } Message;
 
-// semafory - indeksy w zbiorze semaforów
 #define SEM_SHARED_STATE 0    // Mutex na pamięć dzieloną
-#define SEM_FREE_SEATS 1      // Semafor "są wolne miejsca"
 
 #endif // COMMON_H
 

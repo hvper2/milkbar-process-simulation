@@ -2,7 +2,6 @@
 #include "utils.h"
 
 static SharedState *shared_state = NULL;
-static int shm_id = -1;
 static int msg_queue_id = -1;
 static int sem_id = -1;
 static int running = 1;
@@ -242,8 +241,6 @@ int main(void) {
         handle_error("OBSLUGA: get_shared_memory failed");
     }
     
-    shm_id = shmget(SHM_KEY, 0, 0);
-    
     msg_queue_id = get_message_queue();
     if (msg_queue_id == -1) {
         handle_error("OBSLUGA: get_message_queue failed");
@@ -324,17 +321,13 @@ int main(void) {
             
             sem_signal(sem_id, SEM_SHARED_STATE);
             
-            response.mtype = (msg.mtype == MSG_TYPE_SEAT_REQUEST) ? 
-                             (response.table_type > 0 ? MSG_TYPE_SEAT_CONFIRM : MSG_TYPE_SEAT_REJECT) : response.mtype;
-            long reply_type = 1000 + msg.group_id;
-            response.mtype = reply_type;
+            response.mtype = 1000 + msg.group_id;
             
             if (msgsnd(msg_queue_id, &response, msg_size, 0) == -1) {
                 log_message("OBSLUGA: Błąd wysyłania odpowiedzi do klienta #%d: %s", 
                            msg.group_id, strerror(errno));
             }
             
-        } else if (msg.mtype == MSG_TYPE_PAID) {
         } else if (msg.mtype == MSG_TYPE_DISHES) {
             sem_wait(sem_id, SEM_SHARED_STATE);
             

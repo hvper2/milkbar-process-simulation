@@ -4,6 +4,7 @@
 static int msg_queue_id = -1;
 static int running = 1;
 
+// Obsługa sygnałów
 void signal_handler(int sig) {
     (void)sig;
     running = 0;

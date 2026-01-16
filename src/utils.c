@@ -125,12 +125,8 @@ int create_shared_memory(void) {
     
     memset(state, 0, size);
     state->total_free_seats = MAX_PERSONS;
-    state->reserved_seats = 0;
-    state->dirty_dishes = 0;
-    state->x3_doubled = 0;
     state->effective_x3 = X3;
     state->clients_pgid = -1;
-    state->fire_alarm = 0;
     
     if (shmdt(state) == -1) {
         handle_error("create_shared_memory: shmdt failed");
@@ -150,7 +146,7 @@ int create_message_queue(void) {
 }
 
 int create_semaphores(void) {
-    sem_id = semget(SEM_KEY, 2, IPC_CREAT | 0600);
+    sem_id = semget(SEM_KEY, 1, IPC_CREAT | 0600);
     if (sem_id == -1) {
         perror("create_semaphores: semget failed");
         exit(EXIT_FAILURE);
@@ -158,11 +154,6 @@ int create_semaphores(void) {
     
     if (semctl(sem_id, SEM_SHARED_STATE, SETVAL, 1) == -1) {
         perror("create_semaphores: semctl SETVAL SEM_SHARED_STATE failed");
-        exit(EXIT_FAILURE);
-    }
-    
-    if (semctl(sem_id, SEM_FREE_SEATS, SETVAL, MAX_PERSONS) == -1) {
-        perror("create_semaphores: semctl SETVAL SEM_FREE_SEATS failed");
         exit(EXIT_FAILURE);
     }
     

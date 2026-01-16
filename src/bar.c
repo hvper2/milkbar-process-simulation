@@ -6,6 +6,7 @@ static pid_t pid_obsluga = -1;
 static pid_t pid_kierownik = -1;
 static int running = 1;
 
+// Obsługa sygnałów
 void signal_handler(int sig) {
     (void)sig;
     running = 0;
@@ -13,6 +14,7 @@ void signal_handler(int sig) {
 
 static pid_t clients_pgid = -1;
 
+// Spawnuje proces
 pid_t spawn_process(const char *program_path, const char *program_name) {
     pid_t pid = fork();
     
@@ -28,6 +30,7 @@ pid_t spawn_process(const char *program_path, const char *program_name) {
     return pid;
 }
 
+// Spawnuje proces klienta
 pid_t spawn_client(const char *program_path, const char *program_name, const char *group_size_str) {
     pid_t pid = fork();
     
@@ -49,9 +52,8 @@ pid_t spawn_client(const char *program_path, const char *program_name, const cha
         } else {
             setpgid(pid, clients_pgid);
         }
-        return pid;
     }
-    return -1;
+    return pid;
 }
 
 int main(void) {
