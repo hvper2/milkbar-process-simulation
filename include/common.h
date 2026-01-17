@@ -38,6 +38,9 @@
 // Tempo napływania klientów (w sekundach)
 #define CLIENT_INTERVAL 1
 
+// Maksymalna liczba klientów do wygenerowania
+#define MAX_CLIENTS 100
+
 // Prawdopodobieństwo, że klient nie zamawia (w %)
 #define NO_ORDER_PROBABILITY 5
 

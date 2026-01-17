@@ -118,13 +118,20 @@ int main(void) {
     
     time_t start_time = time(NULL);
     time_t current_time;
+    int clients_generated = 0; 
     
     srand(time(NULL));
     
+    //pętla generowania klientów
     while (running) {
         current_time = time(NULL);
         
         if (current_time - start_time >= SIMULATION_TIME) {
+            break;
+        }
+        
+        if (MAX_CLIENTS > 0 && clients_generated >= MAX_CLIENTS) {
+            log_message("BAR: Osiągnięto limit %d klientów - przestaję generować", MAX_CLIENTS);
             break;
         }
         
@@ -158,7 +165,10 @@ int main(void) {
         char group_size_str[8];
         snprintf(group_size_str, sizeof(group_size_str), "%d", group_size);
         spawn_client("./bin/klient", "klient", group_size_str);
+        clients_generated++;
     }
+    
+    log_message("BAR: Wygenerowano łącznie %d klientów", clients_generated);
     
     if (shared_state != NULL) {
         shmdt(shared_state);
