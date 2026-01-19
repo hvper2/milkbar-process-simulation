@@ -2,12 +2,19 @@
 #include "utils.h"
 
 static int msg_queue_id = -1;
+static SharedState *shared_state = NULL;
 static int running = 1;
 
-// Obsługa sygnałów
-void signal_handler(int sig) {
+static void signal_handler(int sig) {
     (void)sig;
     running = 0;
+}
+
+static int check_fire_alarm(void) {
+    if (shared_state != NULL) {
+        return shared_state->fire_alarm;
+    }
+    return 0;
 }
 
 int main(void) {
@@ -19,10 +26,22 @@ int main(void) {
         handle_error("KASJER: get_message_queue failed");
     }
     
+    shared_state = get_shared_memory();
+    if (shared_state == NULL) {
+        handle_error("KASJER: get_shared_memory failed");
+    }
+    
+    log_message("KASJER: Kasa otwarta, czekam na klientów");
+    
     Message msg;
     ssize_t msg_size = sizeof(Message) - sizeof(long);
     
     while (running) {
+        // Sprawdź flagę pożaru przed czekaniem na wiadomość
+        if (check_fire_alarm()) {
+            break;
+        }
+        
         ssize_t received = msgrcv(msg_queue_id, &msg, msg_size, MSG_TYPE_PAYMENT, 0);
         
         if (received == -1) {
@@ -40,7 +59,18 @@ int main(void) {
             }
         }
         
+        if (check_fire_alarm()) {
+            break;
+        }
+        
         log_message("KASJER: Otrzymał płatność od grupy #%d (rozmiar: %d)", msg.group_id, msg.group_size);
+        
+        sleep(2);
+        
+        // Sprawdź flagę pożaru po sleep, przed wysłaniem odpowiedzi
+        if (check_fire_alarm()) {
+            break;
+        }
         
         Message paid_msg;
         paid_msg.mtype = 2000 + msg.group_id;
@@ -57,20 +87,10 @@ int main(void) {
         log_message("KASJER: Płatność przetworzona - grupa #%d może odebrać danie", msg.group_id);
     }
     
-    int shm_id = shmget(SHM_KEY, sizeof(SharedState), 0);
-    int is_fire = 0;
-    if (shm_id != -1) {
-        SharedState *state = (SharedState *)shmat(shm_id, NULL, 0);
-        if (state != (void *)-1) {
-            is_fire = state->fire_alarm;
-            shmdt(state);
-        }
-    }
+    log_message("KASJER: Kasa zamknięta");
     
-    if (is_fire) {
-        log_message("KASJER: Kasa zamknięta (pożar)");
-    } else {
-        log_message("KASJER: Kasa zamknięta");
+    if (shared_state != NULL) {
+        shmdt(shared_state);
     }
     
     return EXIT_SUCCESS;

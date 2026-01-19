@@ -171,6 +171,21 @@ void visualize(void) {
         printf(" ");
     }
     
+    if (shared_state->waiting_count > 0) {
+        printf(BOLD "\n\nKOLEJKA OCZEKUJĄCYCH (%d grup):\n" RESET, shared_state->waiting_count);
+        for (int i = 0; i < shared_state->waiting_count && i < MAX_WAITING_GROUPS; i++) {
+            int group_size = shared_state->waiting_group_sizes[i];
+            int group_id = shared_state->waiting_group_ids[i];
+            if (group_id > 0) {
+                printf("  [%d] Grupa #%d: %d os.  ", i + 1, group_id, group_size);
+                for (int j = 0; j < group_size; j++) {
+                    printf(YELLOW "X" RESET);
+                }
+                printf("\n");
+            }
+        }
+    }
+    
     sem_signal(sem_id, SEM_SHARED_STATE);
     
     fflush(stdout);

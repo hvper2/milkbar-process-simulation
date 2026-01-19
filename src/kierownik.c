@@ -6,8 +6,7 @@ static pid_t pid_kasjer = -1;
 static pid_t clients_pgid = -1;
 static int running = 1;
 
-// Obsługa sygnałów
-void signal_handler(int sig) {
+static void signal_handler(int sig) {
     (void)sig;
     running = 0;
 }
@@ -29,45 +28,16 @@ int main(int argc, char *argv[]) {
         time_t current_time = time(NULL);
         int elapsed = (int)(current_time - start_time);
         
+        // Sygnal 1 - podwojenie stolikow
         if (SIGNAL1_TIME > 0 && !sigusr1_sent && elapsed >= SIGNAL1_TIME) {
             if (pid_obsluga > 0) {
                 log_message("KIEROWNIK: >>> SYGNAŁ 1 (SIGUSR1) - podwojenie stolików 3-osobowych");
                 kill(pid_obsluga, SIGUSR1);
                 sigusr1_sent = 1;
-                
-                // TEST: Próba wysłania sygnału 1 po raz drugi
-                log_message("KIEROWNIK: [TEST] Czekam 2 sekundy przed próbą ponownego wysłania sygnału 1...");
-                sleep(2);
-                
-                // Sprawdzenie stanu przed drugim sygnałem
-                int shm_id = shmget(SHM_KEY, sizeof(SharedState), 0);
-                if (shm_id != -1) {
-                    SharedState *state = (SharedState *)shmat(shm_id, NULL, 0);
-                    if (state != (void *)-1) {
-                        int effective_x3_before = state->effective_x3;
-                        
-                        // Wysłanie sygnału 1 po raz drugi 
-                        log_message("KIEROWNIK: [TEST] >>> Próba wysłania SYGNAŁU 1 (SIGUSR1) po raz drugi");
-                        kill(pid_obsluga, SIGUSR1);
-                        
-                        sleep(1);
-                        
-                        int x3_after = state->x3_doubled;
-                        int effective_x3_after = state->effective_x3;
-                        
-                        if (x3_after == 1 && effective_x3_after == effective_x3_before) {
-                            log_message("KIEROWNIK: [TEST] Stoliki 3-osobowe NIE zostały podwojone ponownie!");
-                        } else {
-                            log_message("KIEROWNIK: [TEST] Stoliki zostały podwojone ponownie! (effective_x3 zmienione z %d na %d)", 
-                                        effective_x3_before, effective_x3_after);
-                        }
-                        
-                        shmdt(state);
-                    }
-                }
             }
         }
         
+        // Sygnal 2 - rezerwacja stolikow
         if (SIGNAL2_TIME > 0 && !sigusr2_sent && elapsed >= SIGNAL2_TIME) {
             if (pid_obsluga > 0) {
                 int tables_to_reserve = RESERVED_TABLE_COUNT;
@@ -91,6 +61,7 @@ int main(int argc, char *argv[]) {
             }
         }
         
+        // Sygnal 3 - pozar
         if (SIGNAL3_TIME > 0 && !fire_sent && elapsed >= SIGNAL3_TIME) {
             fire_sent = 1;
             log_message("KIEROWNIK: >>> SYGNAŁ 3 (POŻAR) - ewakuacja wszystkich klientów");

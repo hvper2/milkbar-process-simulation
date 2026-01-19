@@ -1,5 +1,6 @@
 CC = gcc
 CFLAGS = -Wall -Wextra -std=c11 -g -Iinclude
+LDFLAGS = -lpthread
 
 # Programy do zbudowania
 PROGRAMS = bar kasjer obsluga klient kierownik
@@ -16,7 +17,10 @@ bin logs obj:
 obj/%.o: src/%.c | obj
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-# Linkowanie programów 
+# Linkowanie programów
+bin/klient: obj/klient.o obj/utils.o | bin
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
 bin/%: obj/%.o obj/utils.o | bin
 	$(CC) $(CFLAGS) -o $@ $^
 

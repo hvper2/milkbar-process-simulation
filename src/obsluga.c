@@ -10,7 +10,17 @@ static int running = 1;
 static int group_to_table_type[MAX_GROUPS];
 static int group_to_table_index[MAX_GROUPS];
 
-void sem_wait(int sem_id, int sem_num) {
+// Kolejka oczekujacych klientow
+#define MAX_WAITING 50
+typedef struct {
+    int group_id;
+    int group_size;
+} WaitingClient;
+
+static WaitingClient waiting_queue[MAX_WAITING];
+static int waiting_count = 0;
+
+static void sem_wait_op(int sem_id, int sem_num) {
     struct sembuf sem_op;
     sem_op.sem_num = sem_num;
     sem_op.sem_op = -1;
@@ -23,7 +33,7 @@ void sem_wait(int sem_id, int sem_num) {
     }
 }
 
-void sem_signal(int sem_id, int sem_num) {
+static void sem_signal_op(int sem_id, int sem_num) {
     struct sembuf sem_op;
     sem_op.sem_num = sem_num;
     sem_op.sem_op = 1;
@@ -34,7 +44,7 @@ void sem_signal(int sem_id, int sem_num) {
     }
 }
 
-int find_free_table(int group_size, int *table_type, int *table_index) {
+static int find_free_table(int group_size, int *table_type, int *table_index) {
     if (group_size == 1) {
         for (int i = 0; i < X1; i++) {
             if (shared_state->table_1[i] == 0) {
@@ -100,7 +110,7 @@ int find_free_table(int group_size, int *table_type, int *table_index) {
     return 0;
 }
 
-void allocate_table(int table_type, int table_index, int group_size, int group_id) {
+static void allocate_table(int table_type, int table_index, int group_size, int group_id) {
     switch (table_type) {
         case 1:
             shared_state->table_1[table_index] = 1;
@@ -140,8 +150,9 @@ void allocate_table(int table_type, int table_index, int group_size, int group_i
     shared_state->total_free_seats -= group_size;
 }
 
-void free_table(int table_type, int table_index, int group_size, int group_id) {
+static void free_table(int table_type, int table_index, int group_size, int group_id) {
     int is_reserved = 0;
+    
     switch (table_type) {
         case 1:
             if (shared_state->table_1[table_index] == -1) {
@@ -206,9 +217,74 @@ void free_table(int table_type, int table_index, int group_size, int group_id) {
     }
 }
 
-void signal_handler(int sig) {
+static void sync_waiting_queue_to_shared(void) {
+    // Synchronizuj lokalną kolejkę z pamięcią dzieloną
+    shared_state->waiting_count = waiting_count;
+    for (int i = 0; i < waiting_count && i < MAX_WAITING_GROUPS; i++) {
+        shared_state->waiting_group_ids[i] = waiting_queue[i].group_id;
+        shared_state->waiting_group_sizes[i] = waiting_queue[i].group_size;
+    }
+    // Wyczyść pozostałe pozycje
+    for (int i = waiting_count; i < MAX_WAITING_GROUPS; i++) {
+        shared_state->waiting_group_ids[i] = 0;
+        shared_state->waiting_group_sizes[i] = 0;
+    }
+}
+
+static int add_to_waiting_queue(int group_id, int group_size) {
+    if (waiting_count >= MAX_WAITING) {
+        return 0;
+    }
+    waiting_queue[waiting_count].group_id = group_id;
+    waiting_queue[waiting_count].group_size = group_size;
+    waiting_count++;
+    sync_waiting_queue_to_shared();
+    return 1;
+}
+
+static void try_serve_waiting_clients(void) {
+    ssize_t msg_size = sizeof(Message) - sizeof(long);
+    
+    while (waiting_count > 0) {
+        int group_id = waiting_queue[0].group_id;
+        int group_size = waiting_queue[0].group_size;
+        
+        int table_type, table_index;
+        if (find_free_table(group_size, &table_type, &table_index)) {
+            allocate_table(table_type, table_index, group_size, group_id);
+            
+            int group_idx = group_id % MAX_GROUPS;
+            group_to_table_type[group_idx] = table_type;
+            group_to_table_index[group_idx] = table_index;
+            
+            Message response;
+            response.mtype = 1000 + group_id;
+            response.group_id = group_id;
+            response.group_size = group_size;
+            response.table_type = table_type;
+            response.table_index = table_index;
+            
+            if (msgsnd(msg_queue_id, &response, msg_size, 0) == -1) {
+                log_message("OBSLUGA: Błąd wysyłania do klienta #%d z kolejki", group_id);
+            } else {
+                log_message("OBSLUGA: Klient #%d z kolejki -> stolik %d-os.[%d]", 
+                           group_id, table_type, table_index);
+            }
+            
+            for (int j = 0; j < waiting_count - 1; j++) {
+                waiting_queue[j] = waiting_queue[j + 1];
+            }
+            waiting_count--;
+            sync_waiting_queue_to_shared();
+        } else {
+            break;
+        }
+    }
+}
+
+static void signal_handler(int sig) {
     if (sig == SIGUSR1) {
-        sem_wait(sem_id, SEM_SHARED_STATE);
+        sem_wait_op(sem_id, SEM_SHARED_STATE);
         
         if (shared_state->x3_doubled == 0) {
             shared_state->x3_doubled = 1;
@@ -221,8 +297,9 @@ void signal_handler(int sig) {
                        old_x3, shared_state->effective_x3, new_seats);
         }
         
-        sem_signal(sem_id, SEM_SHARED_STATE);
+        sem_signal_op(sem_id, SEM_SHARED_STATE);
     } else if (sig == SIGUSR2) {
+        // Rezerwacja obslugiwana przez MSG_TYPE_RESERVE_SEATS
     } else if (sig == SIGTERM || sig == SIGINT) {
         running = 0;
     }
@@ -278,24 +355,16 @@ int main(void) {
                 continue;
             }
             if (errno == EINTR) {
-                if (!running) {
-                    break;
-                }
+                if (!running) break;
                 continue;
             } else {
-                if (!running) {
-                    break;
-                }
+                if (!running) break;
                 continue;
             }
         }
         
         if (msg.mtype == MSG_TYPE_SEAT_REQUEST) {
-            sem_wait(sem_id, SEM_SHARED_STATE);
-            
-            Message response;
-            response.group_id = msg.group_id;
-            response.group_size = msg.group_size;
+            sem_wait_op(sem_id, SEM_SHARED_STATE);
             
             int table_type, table_index;
             if (find_free_table(msg.group_size, &table_type, &table_index)) {
@@ -305,31 +374,42 @@ int main(void) {
                 group_to_table_type[group_idx] = table_type;
                 group_to_table_index[group_idx] = table_index;
                 
-                response.mtype = MSG_TYPE_SEAT_CONFIRM;
+                sem_signal_op(sem_id, SEM_SHARED_STATE);
+                
+                Message response;
+                response.mtype = 1000 + msg.group_id;
+                response.group_id = msg.group_id;
+                response.group_size = msg.group_size;
                 response.table_type = table_type;
                 response.table_index = table_index;
+                
+                if (msgsnd(msg_queue_id, &response, msg_size, 0) == -1) {
+                    log_message("OBSLUGA: Błąd wysyłania odpowiedzi do #%d", msg.group_id);
+                }
                 
                 log_message("OBSLUGA: Stolik %d-os.[%d] -> grupa #%d", 
                            table_type, table_index, msg.group_id);
             } else {
-                response.mtype = MSG_TYPE_SEAT_REJECT;
-                response.table_type = 0;
-                response.table_index = -1;
+                if (add_to_waiting_queue(msg.group_id, msg.group_size)) {
+                    log_message("OBSLUGA: Grupa #%d (%d os.) czeka w kolejce (pozycja %d)", 
+                               msg.group_id, msg.group_size, waiting_count);
+                } else {
+                    Message response;
+                    response.mtype = 1000 + msg.group_id;
+                    response.group_id = msg.group_id;
+                    response.group_size = msg.group_size;
+                    response.table_type = 0;
+                    response.table_index = -1;
+                    
+                    msgsnd(msg_queue_id, &response, msg_size, 0);
+                    log_message("OBSLUGA: Kolejka pełna - grupa #%d odrzucona", msg.group_id);
+                }
                 
-                log_message("OBSLUGA: BRAK MIEJSCA dla grupy #%d", msg.group_id);
-            }
-            
-            sem_signal(sem_id, SEM_SHARED_STATE);
-            
-            response.mtype = 1000 + msg.group_id;
-            
-            if (msgsnd(msg_queue_id, &response, msg_size, 0) == -1) {
-                log_message("OBSLUGA: Błąd wysyłania odpowiedzi do klienta #%d: %s", 
-                           msg.group_id, strerror(errno));
+                sem_signal_op(sem_id, SEM_SHARED_STATE);
             }
             
         } else if (msg.mtype == MSG_TYPE_DISHES) {
-            sem_wait(sem_id, SEM_SHARED_STATE);
+            sem_wait_op(sem_id, SEM_SHARED_STATE);
             
             int group_idx = msg.group_id % MAX_GROUPS;
             int table_type = group_to_table_type[group_idx];
@@ -344,14 +424,16 @@ int main(void) {
                 
                 group_to_table_type[group_idx] = 0;
                 group_to_table_index[group_idx] = -1;
+                
+                try_serve_waiting_clients();
             }
             
-            sem_signal(sem_id, SEM_SHARED_STATE);
+            sem_signal_op(sem_id, SEM_SHARED_STATE);
             
         } else if (msg.mtype == MSG_TYPE_RESERVE_SEATS) {
             int tables_to_reserve = msg.group_size;
             
-            sem_wait(sem_id, SEM_SHARED_STATE);
+            sem_wait_op(sem_id, SEM_SHARED_STATE);
             
             typedef struct {
                 int type;
@@ -417,18 +499,10 @@ int main(void) {
                     int seats = free_tables[i].seats;
                     
                     switch (type) {
-                        case 1:
-                            shared_state->table_1[idx] = -1;
-                            break;
-                        case 2:
-                            shared_state->table_2[idx] = -1;
-                            break;
-                        case 3:
-                            shared_state->table_3[idx] = -1;
-                            break;
-                        case 4:
-                            shared_state->table_4[idx] = -1;
-                            break;
+                        case 1: shared_state->table_1[idx] = -1; break;
+                        case 2: shared_state->table_2[idx] = -1; break;
+                        case 3: shared_state->table_3[idx] = -1; break;
+                        case 4: shared_state->table_4[idx] = -1; break;
                     }
                     
                     tables_reserved++;
@@ -441,11 +515,23 @@ int main(void) {
             
             shared_state->reserved_seats = seats_reserved;
             
-            log_message("OBSLUGA: Rezerwacja kierownika: %d stolików (%d miejsc) - zarezerwowane do końca symulacji", 
+            log_message("OBSLUGA: Rezerwacja kierownika: %d stolików (%d miejsc)", 
                        tables_reserved, seats_reserved);
             
-            sem_signal(sem_id, SEM_SHARED_STATE);
+            sem_signal_op(sem_id, SEM_SHARED_STATE);
         }
+    }
+
+    // Wyslij odpowiedzi do czekajacych w kolejce
+    ssize_t final_msg_size = sizeof(Message) - sizeof(long);
+    for (int i = 0; i < waiting_count; i++) {
+        Message response;
+        response.mtype = 1000 + waiting_queue[i].group_id;
+        response.group_id = waiting_queue[i].group_id;
+        response.group_size = waiting_queue[i].group_size;
+        response.table_type = 0;
+        response.table_index = -1;
+        msgsnd(msg_queue_id, &response, final_msg_size, IPC_NOWAIT);
     }
 
     int is_fire = 0;

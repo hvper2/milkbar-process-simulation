@@ -35,11 +35,8 @@
 // Czas symulacji (w sekundach)
 #define SIMULATION_TIME 30
 
-// Tempo napływania klientów (w sekundach)
-#define CLIENT_INTERVAL 1
-
-// Maksymalna liczba klientów do wygenerowania
-#define MAX_CLIENTS 100
+// Liczba klientów (grup) do wygenerowania na starcie symulacji
+#define TOTAL_CLIENTS 30
 
 // Prawdopodobieństwo, że klient nie zamawia (w %)
 #define NO_ORDER_PROBABILITY 5
@@ -56,7 +53,7 @@
 #define RESERVED_TABLE_COUNT 2
 
 // Klucz bazowy dla zasobów IPC
-#define IPC_KEY_BASE 0x12345678
+#define IPC_KEY_BASE 0x00001010
 #define SHM_KEY (IPC_KEY_BASE + 1) 
 #define MSG_KEY (IPC_KEY_BASE + 2)
 #define SEM_KEY (IPC_KEY_BASE + 3)  
@@ -84,6 +81,12 @@ typedef struct {
     
     pid_t clients_pgid;   // PGID grupy klientów (do sygnalizacji pożaru)
     int fire_alarm;       // Flaga pożaru (1 = pożar)
+    
+    // Kolejka oczekujących klientów (dla wizualizacji)
+    #define MAX_WAITING_GROUPS 50
+    int waiting_group_ids[MAX_WAITING_GROUPS];    // ID grup czekających
+    int waiting_group_sizes[MAX_WAITING_GROUPS];  // Rozmiary grup czekających
+    int waiting_count;                            // Liczba grup w kolejce
 } SharedState;
 
 //  kolejka komunikatów 
