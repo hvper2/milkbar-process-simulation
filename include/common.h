@@ -46,7 +46,7 @@
 
 // Czas wywołania sygnałów przez kierownika (w sekundach od startu symulacji)
 #define SIGNAL1_TIME 10   // Sygnał 1 (SIGUSR1)
-#define SIGNAL2_TIME 15   // Sygnał 2 (SIGUSR2)
+#define SIGNAL2_TIME 3   // Sygnał 2 (SIGUSR2)
 #define SIGNAL3_TIME 29  // Sygnał 3 (SIGTERM) 
 
 // Liczba stolików do rezerwacji przez kierownika (sygnał 2)
@@ -81,6 +81,7 @@ typedef struct {
     
     pid_t clients_pgid;   // PGID grupy klientów (do sygnalizacji pożaru)
     int fire_alarm;       // Flaga pożaru (1 = pożar)
+    time_t simulation_start_time;  // Czas startu symulacji (dla synchronizacji sygnałów)
     
     // Kolejka oczekujących klientów (dla wizualizacji)
     #define MAX_WAITING_GROUPS 50

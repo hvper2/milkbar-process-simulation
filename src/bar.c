@@ -15,6 +15,15 @@ static void signal_handler(int sig) {
     running = 0;
 }
 
+static void sigchld_handler(int sig) {
+    (void)sig;
+    // Zbieranie wszystkich zakończonych procesów potomnych (zombie)
+    int status;
+    while (waitpid(-1, &status, WNOHANG) > 0) {
+        // Proces zombie został zebrany
+    }
+}
+
 static pid_t spawn_process(const char *program_path, const char *program_name) {
     pid_t pid = fork();
     
@@ -59,6 +68,7 @@ int main(void) {
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
     signal(SIGUSR1, signal_handler);
+    signal(SIGCHLD, sigchld_handler);
     
     srand(time(NULL));
     
@@ -66,6 +76,12 @@ int main(void) {
     create_shared_memory();
     create_message_queue();
     create_semaphores();
+    
+    // Ustawienie czasu startu symulacji w pamięci dzielonej
+    SharedState *shared_state = get_shared_memory();
+    if (shared_state != NULL) {
+        shared_state->simulation_start_time = time(NULL);
+    }
     
     log_message("BAR: Inicjalizacja zakończona, uruchamiam pracowników...");
     
@@ -80,8 +96,26 @@ int main(void) {
         cleanup_ipc();
         return EXIT_FAILURE;
     }
+
+    usleep(50000);
     
-    usleep(100000);
+    char pid_obsluga_str[32];
+    char pid_kasjer_str[32];
+    char clients_pgid_str[32];
+    snprintf(pid_obsluga_str, sizeof(pid_obsluga_str), "%d", pid_obsluga);
+    snprintf(pid_kasjer_str, sizeof(pid_kasjer_str), "%d", pid_kasjer);
+    snprintf(clients_pgid_str, sizeof(clients_pgid_str), "%d", -1);  
+    
+    pid_kierownik = fork();
+    if (pid_kierownik == -1) {
+        handle_error("BAR: fork kierownik failed");
+    } else if (pid_kierownik == 0) {
+        execl("./bin/kierownik", "kierownik", pid_obsluga_str, pid_kasjer_str, clients_pgid_str, (char *)NULL);
+        perror("BAR: execl kierownik failed");
+        exit(EXIT_FAILURE);
+    }
+    
+    log_message("BAR: Procesy uruchomione (kasjer, obsługa, kierownik)");
     
     // Generowanie wszystkich klientow na starcie
     log_message("BAR: Generuję %d grup klientów...", TOTAL_CLIENTS);
@@ -96,37 +130,26 @@ int main(void) {
             client_pids[num_clients++] = client_pid;
         }
         
-        usleep(50000);
+        usleep(500000);
+        // sleep(1);  
     }
     
     log_message("BAR: Wygenerowano %d grup klientów", num_clients);
     
-    // Uruchomienie kierownika
-    char pid_obsluga_str[32];
-    char pid_kasjer_str[32];
-    char clients_pgid_str[32];
-    snprintf(pid_obsluga_str, sizeof(pid_obsluga_str), "%d", pid_obsluga);
-    snprintf(pid_kasjer_str, sizeof(pid_kasjer_str), "%d", pid_kasjer);
-    snprintf(clients_pgid_str, sizeof(clients_pgid_str), "%d", clients_pgid);
-    
-    pid_kierownik = fork();
-    if (pid_kierownik == -1) {
-        handle_error("BAR: fork kierownik failed");
-    } else if (pid_kierownik == 0) {
-        execl("./bin/kierownik", "kierownik", pid_obsluga_str, pid_kasjer_str, clients_pgid_str, (char *)NULL);
-        perror("BAR: execl kierownik failed");
-        exit(EXIT_FAILURE);
+    // Aktualizacja clients_pgid w pamięci dzielonej (dla kierownika)
+    if (shared_state != NULL && clients_pgid > 0) {
+        shared_state->clients_pgid = clients_pgid;
     }
     
-    log_message("BAR: Procesy uruchomione (kasjer, obsługa, kierownik)");
-    
-    SharedState *shared_state = get_shared_memory();
     if (shared_state == NULL) {
-        cleanup_ipc();
-        return EXIT_FAILURE;
+        shared_state = get_shared_memory();
+        if (shared_state == NULL) {
+            cleanup_ipc();
+            return EXIT_FAILURE;
+        }
     }
     
-    time_t start_time = time(NULL);
+    time_t start_time = shared_state->simulation_start_time;
     
     while (running) {
         time_t current_time = time(NULL);
@@ -141,6 +164,8 @@ int main(void) {
             break;
         }
         
+        // Procesy zombie są zbierane automatycznie przez sigchld_handler
+        // Dodatkowo sprawdzamy co jakiś czas, na wypadek gdyby handler nie zadziałał
         int status;
         while (waitpid(-1, &status, WNOHANG) > 0) {
         }

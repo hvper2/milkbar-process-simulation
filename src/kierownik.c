@@ -19,7 +19,21 @@ int main(int argc, char *argv[]) {
     if (argc > 2) pid_kasjer = atoi(argv[2]);
     if (argc > 3) clients_pgid = atoi(argv[3]);
     
-    time_t start_time = time(NULL);
+    int shm_id = shmget(SHM_KEY, sizeof(SharedState), 0);
+    time_t start_time = time(NULL);  
+    if (shm_id != -1) {
+        SharedState *state = (SharedState *)shmat(shm_id, NULL, 0);
+        if (state != (void *)-1) {
+            if (state->simulation_start_time > 0) {
+                start_time = state->simulation_start_time;
+            }
+            if (clients_pgid <= 0 && state->clients_pgid > 0) {
+                clients_pgid = state->clients_pgid;
+            }
+            shmdt(state);
+        }
+    }
+    
     int sigusr1_sent = 0;
     int sigusr2_sent = 0;
     int fire_sent = 0;
@@ -71,6 +85,9 @@ int main(int argc, char *argv[]) {
                 SharedState *state = (SharedState *)shmat(shm_id, NULL, 0);
                 if (state != (void *)-1) {
                     state->fire_alarm = 1;
+                    if (clients_pgid <= 0 && state->clients_pgid > 0) {
+                        clients_pgid = state->clients_pgid;
+                    }
                     shmdt(state);
                 }
             }
