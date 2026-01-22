@@ -2,6 +2,20 @@
 
 Multi-procesowa symulacja baru mlecznego wykorzystująca bibliotekę standardową C11 oraz System V IPC (message queues, semafory, shared memory) na Linuxie.
 
+## Wymagania systemowe
+
+**Środowisko:**
+- System operacyjny: Linux
+- Środowisko testowe: serwer Torus (Debian)
+
+**Kompilator:**
+- Kompilator: `gcc` (GNU Compiler Collection)
+- Standard języka: C11 (`-std=c11`)
+
+**Wymagane narzędzia:**
+- `make` - do zarządzania kompilacją
+- Standardowe narzędzia systemowe Linux 
+
 ## Build & Run
 
 ```bash
@@ -31,7 +45,6 @@ make
 
 ## Architektura projektu
 
-### Multi-procesowy pipeline
 Projekt wykorzystuje `fork()` + `exec()` dla każdej roli:
 - **bar** (proces główny) - inicjalizuje IPC, generuje klientów, zarządza procesami
 - **kasjer** - przetwarza płatności od klientów
@@ -187,11 +200,14 @@ Sprawdzić w logach (`logs/symulacja.log`):
 **Oczekiwany wynik:**
 
 - po sygnale liczba miejsc X3 podwaja się, kolejka maleje,
-- sygnał jest wysyłany tylko raz (flaga `sigusr1_sent` w kodzie kierownika zapobiega ponownemu wysłaniu),
-- próba ponownego podwojenia jest blokowana przez flagę `x3_doubled` w pamięci współdzielonej.
+- po 3 sekundach kierownik automatycznie próbuje wysłać sygnał 1 ponownie,
+- próba ponownego podwojenia jest blokowana przez flagę `x3_doubled` w pamięci współdzielonej,
+- w logach pojawia się komunikat o nieudanej próbie.
 
 **Weryfikacja:** 
 - W logach pojawi się komunikat: `"OBSLUGA: X3 podwojone: 2 -> 4 stolików (+6 miejsc)"`
+- Po 3 sekundach: `"KIEROWNIK: >>> Próba ponownego wysłania SYGNAŁU 1 (SIGUSR1) po 3 sekundach"`
+- Następnie: `"OBSLUGA: SYGNAŁ 1 (SIGUSR1) otrzymany ponownie - operacja NIEMOŻLIWA (stoliki 3-osobowe już zostały podwojone)"`
 
 ---
 
