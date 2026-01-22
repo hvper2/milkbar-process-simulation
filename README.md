@@ -21,11 +21,11 @@ make
 
 - `X1`, `X2`, `X3`, `X4` - Liczba stolików każdego typu (1-osobowe, 2-osobowe, 3-osobowe, 4-osobowe)
 - `SIMULATION_TIME` - Czas trwania symulacji w sekundach (domyślnie 30s)
-- `CLIENT_INTERVAL` - Interwał generowania nowych klientów w sekundach (domyślnie 1s)
+- `TOTAL_CLIENTS` - Całkowita liczba grup klientów do wygenerowania (domyślnie 30)
 - `EATING_TIME` - Czas jedzenia klienta w sekundach (domyślnie 3s)
 - `NO_ORDER_PROBABILITY` - Prawdopodobieństwo, że klient nie zamówi (domyślnie 5%)
 - `SIGNAL1_TIME` - Moment wysłania sygnału podwojenia stolików X3 (domyślnie 10s)
-- `SIGNAL2_TIME` - Moment wysłania sygnału rezerwacji stolików (domyślnie 15s)
+- `SIGNAL2_TIME` - Moment wysłania sygnału rezerwacji stolików (domyślnie 3s)
 - `SIGNAL3_TIME` - Moment wywołania pożaru/ewakuacji (domyślnie 29s)
 - `RESERVED_TABLE_COUNT` - Liczba stolików do rezerwacji przez kierownika (domyślnie 2)
 
@@ -45,8 +45,8 @@ Projekt wykorzystuje `fork()` + `exec()` dla każdej roli:
 - **Semafor** (`semget`/`semop`/`semctl`): mutex do synchronizacji dostępu do pamięci współdzielonej oraz synchronizacja zapisu do logu
 
 ### Obsługa sygnałów
-- `SIGUSR1` - podwojenie stolików 3-osobowych (obsługa), synchronizacja rozpoczęcia jedzenia (klienci)
-- `SIGUSR2` - rezerwacja stolików przez kierownika (obsługa), sygnał wyjścia dla procesów potomnych (klienci)
+- `SIGUSR1` - podwojenie stolików 3-osobowych (obsługa)
+- `SIGUSR2` - rezerwacja stolików przez kierownika (obsługa)
 - `SIGTERM` - pożar/ewakuacja (wszystkie procesy), zakończenie pracy
 - `SIGINT` - przerwanie symulacji (proces główny)
 
@@ -72,52 +72,54 @@ Proces główny tworzy wszystkie zasoby IPC i uruchamia procesy pracowników:
 
 ### 2. Cykl życia klienta (klient.c)
 1. **Wejście**: Klient wchodzi do baru (może być grupa 1-3 osoby)
-2. **Rezerwacja stolika**: Wysyła `MSG_TYPE_SEAT_REQUEST` → obsługa znajduje wolny stolik → odpowiedź
-3. **Płatność**: Wysyła `MSG_TYPE_PAYMENT` → kasjer przetwarza → potwierdzenie
-4. **Jedzenie**: Wszystkie procesy grupy synchronizują się przez `SIGUSR1` → jedzą przez `EATING_TIME` sekund
-5. **Oddanie naczyń**: Wysyła `MSG_TYPE_DISHES` → obsługa zwalnia stolik → wyjście
+2. **Tworzenie wątków**: Dla grup wieloosobowych (2-3 osoby) tworzone są wątki pthread dla każdego członka grupy
+3. **Rezerwacja stolika**: Wysyła `MSG_TYPE_SEAT_REQUEST` → obsługa znajduje wolny stolik → odpowiedź
+4. **Płatność**: Wysyła `MSG_TYPE_PAYMENT` → kasjer przetwarza → potwierdzenie
+5. **Jedzenie**: Wszystkie wątki grupy synchronizują się przez zmienną `can_start_eating` → jedzą przez `EATING_TIME` sekund
+6. **Oddanie naczyń**: Wysyła `MSG_TYPE_DISHES` → obsługa zwalnia stolik → wyjście
 
 ### 3. Sygnały kierownika (kierownik.c)
 - **SIGNAL1_TIME**: `SIGUSR1` → podwojenie stolików 3-osobowych (2 → 4 stoliki)
-- **SIGNAL2_TIME**: `SIGUSR2` + wiadomość → rezerwacja losowych stolików (oznaczone jako -1)
-- **SIGNAL3_TIME**: Pożar → ustawia `fire_alarm=1`, wysyła `SIGTERM` do wszystkich klientów, zamyka bar
+- **SIGNAL2_TIME**: `SIGUSR2` + wiadomość `MSG_TYPE_RESERVE_SEATS` → rezerwacja losowych stolików (oznaczone jako -1)
+- **SIGNAL3_TIME**: Pożar → ustawia `fire_alarm=1`, wysyła `SIGTERM` do wszystkich klientów (przez `killpg`), zamyka bar
 
 ## Linki do kodu - wymagane funkcje systemowe
 
 ### a. Tworzenie i obsługa plików
-- `creat()` - tworzenie pliku logu: [`src/utils.c#L21`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/utils.c#L21)
-- `open()` - otwieranie pliku logu: [`src/utils.c#L27`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/utils.c#L27), [`src/utils.c#L74`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/utils.c#L74)
-- `close()` - zamykanie pliku logu: [`src/utils.c#L26`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/utils.c#L26), [`src/utils.c#L106`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/utils.c#L106)
-- `write()` - zapis do pliku logu: [`src/utils.c#L91`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/utils.c#L91)
-- `unlink()` - usuwanie starego pliku logu: [`src/utils.c#L19`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/utils.c#L19)
+- `creat()` - tworzenie pliku logu
+- `open()` - otwieranie pliku logu
+- `close()` - zamykanie pliku logu
+- `write()` - zapis do pliku logu
+- `unlink()` - usuwanie starego pliku logu
 
 ### b. Tworzenie procesów
-- `fork()` - tworzenie procesów potomnych: [`src/bar.c#L19`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/bar.c#L19), [`src/bar.c#L35`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/bar.c#L35), [`src/bar.c#L96`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/bar.c#L96), [`src/klient.c#L92`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/klient.c#L92)
-- `execl()` - uruchamianie programów: [`src/bar.c#L25`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/bar.c#L25), [`src/bar.c#L44`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/bar.c#L44), [`src/bar.c#L100`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/bar.c#L100)
-- `exit()` - zakończenie procesu: [`src/bar.c#L27`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/bar.c#L27), [`src/utils.c#L13`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/utils.c#L13)
-- `waitpid()` - oczekiwanie na zakończenie procesu: [`src/bar.c#L154`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/bar.c#L154), [`src/bar.c#L169-L171`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/bar.c#L169-L171), [`src/klient.c#L252`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/klient.c#L252)
+- `fork()` - tworzenie procesów potomnych
+- `execl()` - uruchamianie programów
+- `setpgid()` - grupowanie procesów klientów (PGID)
+- `exit()` - zakończenie procesu
+- `waitpid()` - oczekiwanie na zakończenie procesu
 
 ### c. Obsługa sygnałów
-- `kill()` - wysyłanie sygnału do procesu: [`src/kierownik.c#L35`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/kierownik.c#L35), [`src/kierownik.c#L58`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/kierownik.c#L58), [`src/klient.c#L17`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/klient.c#L17)
-- `killpg()` - wysyłanie sygnału do grupy procesów: [`src/kierownik.c#L79`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/kierownik.c#L79), [`src/kierownik.c#L109`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/kierownik.c#L109)
-- `signal()` - rejestracja handlera sygnału: [`src/bar.c#L60-L62`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/bar.c#L60-L62), [`src/klient.c#L75-L78`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/klient.c#L75-L78), [`src/obsluga.c#L234-L237`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/obsluga.c#L234-L237)
+- `kill()` - wysyłanie sygnału do procesu
+- `killpg()` - wysyłanie sygnału do grupy procesów
+- `signal()` - rejestracja handlera sygnału
 
 ### d. Synchronizacja procesów (semafor)
-- `semget()` - tworzenie/otwieranie semafora: [`src/utils.c#L33`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/utils.c#L33), [`src/utils.c#L149`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/utils.c#L149)
-- `semctl()` - kontrola semafora (SETVAL, IPC_RMID): [`src/utils.c#L39`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/utils.c#L39), [`src/utils.c#L155`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/utils.c#L155), [`src/utils.c#L175`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/utils.c#L175)
-- `semop()` - operacje na semaforze (wait/signal): [`src/utils.c#L82`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/utils.c#L82), [`src/utils.c#L100`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/utils.c#L100), [`src/bar.c#L135`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/bar.c#L135), [`src/obsluga.c#L19`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/obsluga.c#L19), [`src/obsluga.c#L32`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/obsluga.c#L32)
+- `semget()` - tworzenie/otwieranie semafora
+- `semctl()` - kontrola semafora (SETVAL, IPC_RMID)
+- `semop()` - operacje na semaforze (wait/signal)
 
 ### e. Segmenty pamięci dzielonej
-- `shmget()` - tworzenie/otwieranie segmentu: [`src/utils.c#L114`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/utils.c#L114), [`src/utils.c#L188`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/utils.c#L188), [`src/klient.c#L28`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/klient.c#L28)
-- `shmat()` - dołączanie segmentu: [`src/utils.c#L120`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/utils.c#L120), [`src/utils.c#L193`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/utils.c#L193), [`src/klient.c#L30`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/klient.c#L30)
-- `shmdt()` - odłączanie segmentu: [`src/utils.c#L131`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/utils.c#L131), [`src/utils.c#L202`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/utils.c#L202), [`src/bar.c#L164`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/bar.c#L164), [`src/obsluga.c#L463`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/obsluga.c#L463)
-- `shmctl()` - kontrola segmentu (IPC_RMID): [`src/utils.c#L165`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/utils.c#L165)
+- `shmget()` - tworzenie/otwieranie segmentu
+- `shmat()` - dołączanie segmentu
+- `shmdt()` - odłączanie segmentu
+- `shmctl()` - kontrola segmentu (IPC_RMID)
 
 ### f. Kolejki komunikatów
-- `msgget()` - tworzenie/otwieranie kolejki: [`src/utils.c#L139`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/utils.c#L139), [`src/utils.c#L202`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/utils.c#L202), [`src/kierownik.c#L46`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/kierownik.c#L46)
-- `msgsnd()` - wysyłanie wiadomości: [`src/klient.c#L132`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/klient.c#L132), [`src/klient.c#L169`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/klient.c#L169), [`src/kasjer.c#L51`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/kasjer.c#L51), [`src/obsluga.c#L326`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/obsluga.c#L326)
-- `msgrcv()` - odbieranie wiadomości: [`src/kasjer.c#L25`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/kasjer.c#L25), [`src/klient.c#L141`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/klient.c#L141), [`src/obsluga.c#L265`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/obsluga.c#L265)
-- `msgctl()` - kontrola kolejki (IPC_RMID): [`src/utils.c#L170`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/utils.c#L170)
+- `msgget()` - tworzenie/otwieranie kolejki
+- `msgsnd()` - wysyłanie wiadomości
+- `msgrcv()` - odbieranie wiadomości
+- `msgctl()` - kontrola kolejki (IPC_RMID)
 
 ## Struktura projektu
 
@@ -159,14 +161,16 @@ Logi są synchronizowane przez semafor, aby uniknąć konfliktów przy równocze
 
 **Przebieg:**
 
-1. Ustawić małą liczbę stolików (np. tylko stoliki 4-osobowe).
-2. Wprowadzić grupy 2-osobowe lub 1-osobowe (zajmuje połowę stolika).
-3. Wprowadzić grupę 3-osobową (nie powinna usiąść przy tym stoliku).
-4. Wprowadzić kolejną grupę 2-osobową (powinna się dosiąść).
+1. Ustawić małą liczbę stolików (np. tylko stoliki 4-osobowe: `X1=0, X2=0, X3=0, X4=2`).
+2. Uruchomić symulację z losowymi grupami klientów (1-3 osoby).
+3. Obserwować zachowanie systemu podczas zapełniania stolików.
 
 **Oczekiwany wynik:** grupy zajmują miejsca optymalnie, ale zgodnie z zakazem łączenia grup o różnej liczebności.
 
-**Weryfikacja:** Sprawdzić w logach (`logs/symulacja.log`) lub wizualizacji, że grupy 2-osobowe dosiadają się do stolików 4-osobowych, a grupa 3-osobowa otrzymuje odpowiedź "BRAK MIEJSCA" lub zostaje przydzielona do innego stolika.
+**Weryfikacja:** 
+Sprawdzić w logach (`logs/symulacja.log`):
+- Wystąpienia: `"OBSLUGA: Stolik 4-os.[X] -> grupa #Y"` - sprawdzić, czy przy tym samym stoliku są grupy o tym samym rozmiarze.
+- Wystąpienia: `"OBSLUGA: Grupa #X (Y os.) czeka w kolejce"` lub odpowiedzi "BRAK MIEJSCA" dla grup x-osobowych, gdy stoliki są częściowo zajęte przez mniejsze grupy.
 
 ---
 
@@ -176,21 +180,18 @@ Logi są synchronizowane przez semafor, aby uniknąć konfliktów przy równocze
 
 **Przebieg:**
 
-1. Ustawić tylko stoliki 3-osobowe (X3).
-2. Doprowadzić do zapełnienia wszystkich stolików 3-osobowych (X3).
-3. Wygenerować kolejne grupy klientów oczekujących na miejsce.
-4. Wysłać **Sygnał 1** od kierownika (ustawić `SIGNAL1_TIME` w `common.h`).
-5. Ponowić próbę wysłania Sygnału 1 (w kodzie kierownika jest test jednostkowy).
+1. Doprowadzić do zapełnienia wszystkich stolików 3-osobowych (X3).
+2. Wygenerować kolejne grupy klientów oczekujących na miejsce.
+3. Wysłać **Sygnał 1** od kierownika (ustawić `SIGNAL1_TIME` w `common.h`).
 
 **Oczekiwany wynik:**
 
-- po pierwszym sygnale liczba miejsc X3 podwaja się, kolejka maleje,
-- drugi sygnał jest ignorowany (operacja jednorazowa).
+- po sygnale liczba miejsc X3 podwaja się, kolejka maleje,
+- sygnał jest wysyłany tylko raz (flaga `sigusr1_sent` w kodzie kierownika zapobiega ponownemu wysłaniu),
+- próba ponownego podwojenia jest blokowana przez flagę `x3_doubled` w pamięci współdzielonej.
 
 **Weryfikacja:** 
 - W logach pojawi się komunikat: `"OBSLUGA: X3 podwojone: 2 -> 4 stolików (+6 miejsc)"`
-- Po drugim sygnale: `"KIEROWNIK: [TEST] Stoliki 3-osobowe NIE zostały podwojone ponownie!"`
-- Sprawdzić w pamięci współdzielonej, że `x3_doubled == 1` i `effective_x3 == 4`
 
 ---
 
@@ -216,7 +217,7 @@ Logi są synchronizowane przez semafor, aby uniknąć konfliktów przy równocze
 
 ### Test 4 – Sygnał 3 (Pożar/Ewakuacja)
 
-**Cel:** sprawdzenie poprawnego czyszczenia zasobów w sytuacji awaryjnej.
+**Cel:** sprawdzenie poprawnego czyszczenia zasobów w sytuacji awaryjnej i po zakończeniu symulacji.
 
 **Przebieg:**
 
@@ -239,9 +240,10 @@ Logi są synchronizowane przez semafor, aby uniknąć konfliktów przy równocze
 
 2. **Sprawdzenie procesów:**
    ```bash
-   ps aux | grep -E "(bar|kasjer|obsluga|klient|kierownik)" | grep -v grep
+   ps -u $(whoami) f
    ```
    Powinno zwrócić puste (wszystkie procesy zakończone).
+   Brak procesów zombie.
 
 3. **Sprawdzenie zasobów IPC:**
    ```bash
@@ -249,13 +251,7 @@ Logi są synchronizowane przez semafor, aby uniknąć konfliktów przy równocze
    ipcs -q  # Kolejki komunikatów
    ipcs -s  # Semafory
    ```
-   Wszystkie zasoby powinny być zwolnione (brak obiektów z kluczem `0x12345678`).
-
-4. **Sprawdzenie procesów zombie:**
-   ```bash
-   ps aux | grep "Z" | grep -v grep
-   ```
-   Brak procesów zombie.
+   Wszystkie zasoby powinny być zwolnione (brak obiektów z kluczem `0x00001010`).
 
 ---
 
@@ -266,7 +262,7 @@ Aby uruchomić testy, zmodyfikuj parametry w `include/common.h`:
 - **Test 1:** Ustaw `X1=0, X2=0, X3=0, X4=2` (tylko stoliki 4-osobowe)
 - **Test 2:** Ustaw `X1=0, X2=0, X3=2, X4=0` i `SIGNAL1_TIME=5`
 - **Test 3:** Ustaw `SIGNAL2_TIME=10` i `RESERVED_TABLE_COUNT=2`
-- **Test 4:** Ustaw `SIGNAL3_TIME=15` i zwiększ `MAX_CLIENTS` aby zapełnić bar
+- **Test 4:** Ustaw `SIGNAL3_TIME=15` i zwiększ `TOTAL_CLIENTS` aby zapełnić bar
 
 Następnie uruchom symulację:
 ```bash
