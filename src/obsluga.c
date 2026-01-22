@@ -20,6 +20,7 @@ typedef struct {
 static WaitingClient waiting_queue[MAX_WAITING];
 static int waiting_count = 0;
 
+// Funkcja semaforowa wait
 static void sem_wait_op(int sem_id, int sem_num) {
     struct sembuf sem_op;
     sem_op.sem_num = sem_num;
@@ -32,7 +33,7 @@ static void sem_wait_op(int sem_id, int sem_num) {
         }
     }
 }
-
+// Funkcja semaforowa signal
 static void sem_signal_op(int sem_id, int sem_num) {
     struct sembuf sem_op;
     sem_op.sem_num = sem_num;
@@ -44,6 +45,7 @@ static void sem_signal_op(int sem_id, int sem_num) {
     }
 }
 
+// Funkcja znajdująca wolne stoliki
 static int find_free_table(int group_size, int *table_type, int *table_index) {
     if (group_size == 1) {
         for (int i = 0; i < X1; i++) {
@@ -110,6 +112,7 @@ static int find_free_table(int group_size, int *table_type, int *table_index) {
     return 0;
 }
 
+// Funkcja alokująca stolik
 static void allocate_table(int table_type, int table_index, int group_size, int group_id) {
     switch (table_type) {
         case 1:
@@ -150,6 +153,7 @@ static void allocate_table(int table_type, int table_index, int group_size, int 
     shared_state->total_free_seats -= group_size;
 }
 
+// Funkcja zwalniająca stolik
 static void free_table(int table_type, int table_index, int group_size, int group_id) {
     int is_reserved = 0;
     
@@ -217,20 +221,20 @@ static void free_table(int table_type, int table_index, int group_size, int grou
     }
 }
 
+// Funkcja synchronizująca kolejkę oczekujących klientów z pamięcią dzieloną
 static void sync_waiting_queue_to_shared(void) {
-    // Synchronizuj lokalną kolejkę z pamięcią dzieloną
     shared_state->waiting_count = waiting_count;
     for (int i = 0; i < waiting_count && i < MAX_WAITING_GROUPS; i++) {
         shared_state->waiting_group_ids[i] = waiting_queue[i].group_id;
         shared_state->waiting_group_sizes[i] = waiting_queue[i].group_size;
     }
-    // Wyczyść pozostałe pozycje
     for (int i = waiting_count; i < MAX_WAITING_GROUPS; i++) {
         shared_state->waiting_group_ids[i] = 0;
         shared_state->waiting_group_sizes[i] = 0;
     }
 }
 
+// Funkcja dodająca klienta do kolejki oczekujących
 static int add_to_waiting_queue(int group_id, int group_size) {
     if (waiting_count >= MAX_WAITING) {
         return 0;
@@ -242,6 +246,7 @@ static int add_to_waiting_queue(int group_id, int group_size) {
     return 1;
 }
 
+// Funkcja próbująca obsłużyć klientów z kolejki oczekujących
 static void try_serve_waiting_clients(void) {
     ssize_t msg_size = sizeof(Message) - sizeof(long);
     
@@ -282,6 +287,7 @@ static void try_serve_waiting_clients(void) {
     }
 }
 
+// Funkcja obsługująca sygnały
 static void signal_handler(int sig) {
     if (sig == SIGUSR1) {
         sem_wait_op(sem_id, SEM_SHARED_STATE);

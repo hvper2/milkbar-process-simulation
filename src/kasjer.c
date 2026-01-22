@@ -37,7 +37,6 @@ int main(void) {
     ssize_t msg_size = sizeof(Message) - sizeof(long);
     
     while (running) {
-        // Sprawdź flagę pożaru przed czekaniem na wiadomość
         if (check_fire_alarm()) {
             break;
         }
@@ -67,7 +66,6 @@ int main(void) {
         
         sleep(2);
         
-        // Sprawdź flagę pożaru po sleep, przed wysłaniem odpowiedzi
         if (check_fire_alarm()) {
             break;
         }

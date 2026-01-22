@@ -110,7 +110,7 @@ int main(int argc, char *argv[]) {
         }
         
         for (int i = 0; i < group_size - 1; i++) {
-            member_args[i].member_id = i + 1;
+            member_args[i].member_id = i + 1;   
             member_args[i].group_id = group_id;
             member_args[i].can_eat = &can_start_eating;
             member_args[i].can_exit = &can_exit_flag;

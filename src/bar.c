@@ -17,10 +17,8 @@ static void signal_handler(int sig) {
 
 static void sigchld_handler(int sig) {
     (void)sig;
-    // Zbieranie wszystkich zakończonych procesów potomnych (zombie)
     int status;
     while (waitpid(-1, &status, WNOHANG) > 0) {
-        // Proces zombie został zebrany
     }
 }
 
@@ -117,7 +115,6 @@ int main(void) {
     
     log_message("BAR: Procesy uruchomione (kasjer, obsługa, kierownik)");
     
-    // Generowanie wszystkich klientow na starcie
     log_message("BAR: Generuję %d grup klientów...", TOTAL_CLIENTS);
     
     for (int i = 0; i < TOTAL_CLIENTS && running; i++) {
@@ -136,7 +133,6 @@ int main(void) {
     
     log_message("BAR: Wygenerowano %d grup klientów", num_clients);
     
-    // Aktualizacja clients_pgid w pamięci dzielonej (dla kierownika)
     if (shared_state != NULL && clients_pgid > 0) {
         shared_state->clients_pgid = clients_pgid;
     }
@@ -164,8 +160,6 @@ int main(void) {
             break;
         }
         
-        // Procesy zombie są zbierane automatycznie przez sigchld_handler
-        // Dodatkowo sprawdzamy co jakiś czas, na wypadek gdyby handler nie zadziałał
         int status;
         while (waitpid(-1, &status, WNOHANG) > 0) {
         }
