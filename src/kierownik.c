@@ -37,6 +37,8 @@ int main(int argc, char *argv[]) {
     int sigusr1_sent = 0;
     int sigusr2_sent = 0;
     int fire_sent = 0;
+    time_t sigusr1_sent_time = 0;
+    int sigusr1_retry_attempted = 0;
     
     while (running) {
         time_t current_time = time(NULL);
@@ -48,6 +50,17 @@ int main(int argc, char *argv[]) {
                 log_message("KIEROWNIK: >>> SYGNAŁ 1 (SIGUSR1) - podwojenie stolików 3-osobowych");
                 kill(pid_obsluga, SIGUSR1);
                 sigusr1_sent = 1;
+                sigusr1_sent_time = current_time;
+            } 
+        }
+        
+        // Próba ponownego wysłania sygnału 1 po 3 sekundach (powinno się nie powieść)
+        if (sigusr1_sent && !sigusr1_retry_attempted && 
+            (current_time - sigusr1_sent_time) >= 3) {
+            if (pid_obsluga > 0) {
+                log_message("KIEROWNIK: >>> Próba ponownego wysłania SYGNAŁU 1 (SIGUSR1) po 3 sekundach");
+                kill(pid_obsluga, SIGUSR1);
+                sigusr1_retry_attempted = 1;
             }
         }
         

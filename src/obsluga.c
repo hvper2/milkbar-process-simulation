@@ -301,6 +301,8 @@ static void signal_handler(int sig) {
             
             log_message("OBSLUGA: X3 podwojone: %d -> %d stolików (+%d miejsc)", 
                        old_x3, shared_state->effective_x3, new_seats);
+        } else {
+            log_message("OBSLUGA: SYGNAŁ 1 (SIGUSR1) otrzymany ponownie - operacja NIEMOŻLIWA (stoliki 3-osobowe już zostały podwojone)");
         }
         
         sem_signal_op(sem_id, SEM_SHARED_STATE);
