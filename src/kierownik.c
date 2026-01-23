@@ -81,7 +81,7 @@ int main(int argc, char *argv[]) {
                     reserve_msg.table_index = 0;
                     
                     ssize_t msg_size = sizeof(Message) - sizeof(long);
-                    msgsnd(msg_id, &reserve_msg, msg_size, 0);
+                    msgsnd(msg_id, &reserve_msg, msg_size, 0);  // Wysyła wiadomość o rezerwacji
                 }
                 kill(pid_obsluga, SIGUSR2);
                 sigusr2_sent = 1;
@@ -97,7 +97,7 @@ int main(int argc, char *argv[]) {
             if (shm_id != -1) {
                 SharedState *state = (SharedState *)shmat(shm_id, NULL, 0);
                 if (state != (void *)-1) {
-                    state->fire_alarm = 1;
+                    state->fire_alarm = 1;  // Ustawia flagę pożaru w pamięci współdzielonej
                     if (clients_pgid <= 0 && state->clients_pgid > 0) {
                         clients_pgid = state->clients_pgid;
                     }
@@ -108,7 +108,7 @@ int main(int argc, char *argv[]) {
             kill(getppid(), SIGUSR1);
             
             if (clients_pgid > 0) {
-                killpg(clients_pgid, SIGTERM);
+                killpg(clients_pgid, SIGTERM);  // Masowa ewakuacja wszystkich klientów (grupa procesów)
             }
             
             sleep(2);
@@ -138,7 +138,7 @@ int main(int argc, char *argv[]) {
         sleep(2);
         
         if (clients_pgid > 0) {
-            killpg(clients_pgid, SIGTERM);
+            killpg(clients_pgid, SIGTERM);  // Zakończenie wszystkich klientów
         }
         
         sleep(1);

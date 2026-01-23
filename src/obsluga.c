@@ -60,7 +60,7 @@ static int find_free_table(int group_size, int *table_type, int *table_index) {
     if (group_size <= 2) {
         for (int i = 0; i < X2; i++) {
             int occupied = shared_state->table_2[i];
-            if (occupied == -1) continue;
+            if (occupied == -1) continue;  // Pomija zarezerwowane stoliki
             if (occupied == 0) {
                 *table_type = 2;
                 *table_index = i;
@@ -78,7 +78,7 @@ static int find_free_table(int group_size, int *table_type, int *table_index) {
     if (group_size <= 3) {
         for (int i = 0; i < x3_limit; i++) {
             int occupied = shared_state->table_3[i];
-            if (occupied == -1) continue;
+            if (occupied == -1) continue;  // Pomija zarezerwowane stoliki
             if (occupied == 0) {
                 *table_type = 3;
                 *table_index = i;
@@ -95,7 +95,7 @@ static int find_free_table(int group_size, int *table_type, int *table_index) {
     if (group_size <= 4) {
         for (int i = 0; i < X4; i++) {
             int occupied = shared_state->table_4[i];
-            if (occupied == -1) continue;
+            if (occupied == -1) continue;  // Pomija zarezerwowane stoliki
             if (occupied == 0) {
                 *table_type = 4;
                 *table_index = i;
@@ -160,7 +160,7 @@ static void free_table(int table_type, int table_index, int group_size, int grou
     switch (table_type) {
         case 1:
             if (shared_state->table_1[table_index] == -1) {
-                is_reserved = 1;
+                is_reserved = 1;  // Stolik zarezerwowany - nie zwalniaj
                 break;
             }
             shared_state->table_1[table_index] = 0;
@@ -263,7 +263,7 @@ static void try_serve_waiting_clients(void) {
             group_to_table_index[group_idx] = table_index;
             
             Message response;
-            response.mtype = 1000 + group_id;
+            response.mtype = 1000 + group_id;  // Typ odpowiedzi: 1000 + group_id
             response.group_id = group_id;
             response.group_size = group_size;
             response.table_type = table_type;
@@ -295,7 +295,7 @@ static void signal_handler(int sig) {
         if (shared_state->x3_doubled == 0) {
             shared_state->x3_doubled = 1;
             int old_x3 = shared_state->effective_x3;
-            shared_state->effective_x3 = X3 * 2;
+            shared_state->effective_x3 = X3 * 2;  // Podwojenie stolików 3-osobowych
             int new_seats = X3 * 3;
             shared_state->total_free_seats += new_seats;
             
@@ -307,7 +307,7 @@ static void signal_handler(int sig) {
         
         sem_signal_op(sem_id, SEM_SHARED_STATE);
     } else if (sig == SIGUSR2) {
-        // Rezerwacja obslugiwana przez MSG_TYPE_RESERVE_SEATS
+        // Rezerwacja obsługiwana przez MSG_TYPE_RESERVE_SEATS
     } else if (sig == SIGTERM || sig == SIGINT) {
         running = 0;
     }
@@ -321,16 +321,19 @@ int main(void) {
     signal(SIGTERM, signal_handler);
     signal(SIGINT, signal_handler);
     
+    // Pobranie pamięci dzielonej
     shared_state = get_shared_memory();
     if (shared_state == NULL) {
         handle_error("OBSLUGA: get_shared_memory failed");
     }
     
+    // Pobranie kolejki komunikatów
     msg_queue_id = get_message_queue();
     if (msg_queue_id == -1) {
         handle_error("OBSLUGA: get_message_queue failed");
     }
     
+    // Pobranie semaforów
     sem_id = get_semaphores();
     if (sem_id == -1) {
         handle_error("OBSLUGA: get_semaphores failed");
@@ -339,22 +342,24 @@ int main(void) {
     Message msg;
     ssize_t msg_size = sizeof(Message) - sizeof(long);
 
+    // Inicjalizacja tablicy grup do stolików
     for (int i = 0; i < MAX_GROUPS; i++) {
         group_to_table_type[i] = 0;
         group_to_table_index[i] = -1;
     }
     
+    // Główna pętla obsługi klientów
     while (running) {
         ssize_t received = -1;
         
-        received = msgrcv(msg_queue_id, &msg, msg_size, MSG_TYPE_SEAT_REQUEST, IPC_NOWAIT);
+        received = msgrcv(msg_queue_id, &msg, msg_size, MSG_TYPE_SEAT_REQUEST, IPC_NOWAIT);  // Żądanie rezerwacji stolika
         
         if (received == -1 && (errno == ENOMSG || errno == EAGAIN)) {
-            received = msgrcv(msg_queue_id, &msg, msg_size, MSG_TYPE_DISHES, IPC_NOWAIT);
+            received = msgrcv(msg_queue_id, &msg, msg_size, MSG_TYPE_DISHES, IPC_NOWAIT);  // Oddanie naczyń
         }
         
         if (received == -1 && (errno == ENOMSG || errno == EAGAIN)) {
-            received = msgrcv(msg_queue_id, &msg, msg_size, MSG_TYPE_RESERVE_SEATS, IPC_NOWAIT);
+            received = msgrcv(msg_queue_id, &msg, msg_size, MSG_TYPE_RESERVE_SEATS, IPC_NOWAIT);  // Rezerwacja przez kierownika
         }
         
         if (received == -1) {
@@ -371,6 +376,7 @@ int main(void) {
             }
         }
         
+        // Obsługa żądań rezerwacji stolika
         if (msg.mtype == MSG_TYPE_SEAT_REQUEST) {
             sem_wait_op(sem_id, SEM_SHARED_STATE);
             
@@ -385,7 +391,7 @@ int main(void) {
                 sem_signal_op(sem_id, SEM_SHARED_STATE);
                 
                 Message response;
-                response.mtype = 1000 + msg.group_id;
+                response.mtype = 1000 + msg.group_id;  // Typ odpowiedzi: 1000 + group_id
                 response.group_id = msg.group_id;
                 response.group_size = msg.group_size;
                 response.table_type = table_type;
@@ -433,12 +439,12 @@ int main(void) {
                 group_to_table_type[group_idx] = 0;
                 group_to_table_index[group_idx] = -1;
                 
-                try_serve_waiting_clients();
+                try_serve_waiting_clients();  // Próbuje obsłużyć klientów z kolejki
             }
             
             sem_signal_op(sem_id, SEM_SHARED_STATE);
             
-        } else if (msg.mtype == MSG_TYPE_RESERVE_SEATS) {
+        } else if (msg.mtype == MSG_TYPE_RESERVE_SEATS) {  // Rezerwacja stolików przez kierownika
             int tables_to_reserve = msg.group_size;
             
             sem_wait_op(sem_id, SEM_SHARED_STATE);
@@ -492,6 +498,7 @@ int main(void) {
             int tables_reserved = 0;
             int seats_reserved = 0;
             
+            // Funkcja rezerwująca stoliki
             if (free_count > 0 && tables_to_reserve > 0) {
                 int to_reserve = (tables_to_reserve < free_count) ? tables_to_reserve : free_count;
                 
@@ -507,7 +514,7 @@ int main(void) {
                     int seats = free_tables[i].seats;
                     
                     switch (type) {
-                        case 1: shared_state->table_1[idx] = -1; break;
+                        case 1: shared_state->table_1[idx] = -1; break;  // -1 = zarezerwowany
                         case 2: shared_state->table_2[idx] = -1; break;
                         case 3: shared_state->table_3[idx] = -1; break;
                         case 4: shared_state->table_4[idx] = -1; break;

@@ -20,6 +20,7 @@ static MemberArgs *member_args = NULL;
 static volatile int can_start_eating = 0;
 static volatile int can_exit_flag = 0;
 
+// Funkcja sprawdzająca flagę pożaru
 static int check_fire_alarm(void) {
     int shm_id = shmget(SHM_KEY, sizeof(SharedState), 0);
     if (shm_id != -1) {
@@ -33,6 +34,7 @@ static int check_fire_alarm(void) {
     return 0;
 }
 
+// Funkcja wątku członka grupy
 static void *member_thread_func(void *arg) {
     MemberArgs *args = (MemberArgs *)arg;
     
@@ -51,6 +53,7 @@ static void *member_thread_func(void *arg) {
     return NULL;
 }
 
+// Funkcja czyszcząca wątki
 static void cleanup_threads(void) {
     if (group_size > 1 && member_threads != NULL) {
         can_exit_flag = 1;
@@ -70,6 +73,7 @@ static void cleanup_threads(void) {
     }
 }
 
+// Funkcja obsługująca sygnały
 static void signal_handler(int sig) {
     (void)sig;
     running = 0;
@@ -140,7 +144,7 @@ int main(int argc, char *argv[]) {
         return EXIT_SUCCESS;
     }
     
-    // Zadanie rezerwacji stolika
+    // Wysyłanie żądania rezerwacji stolika
     Message seat_request;
     seat_request.mtype = MSG_TYPE_SEAT_REQUEST;
     seat_request.group_id = group_id;

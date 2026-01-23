@@ -5,11 +5,13 @@ static int msg_queue_id = -1;
 static SharedState *shared_state = NULL;
 static int running = 1;
 
+// Funkcja obsługująca sygnały
 static void signal_handler(int sig) {
     (void)sig;
     running = 0;
 }
 
+// Funkcja sprawdzająca flagę pożaru
 static int check_fire_alarm(void) {
     if (shared_state != NULL) {
         return shared_state->fire_alarm;
@@ -21,6 +23,7 @@ int main(void) {
     signal(SIGTERM, signal_handler);
     signal(SIGINT, signal_handler);
     
+    // Otwarcie kolejki komunikatów
     msg_queue_id = get_message_queue();
     if (msg_queue_id == -1) {
         handle_error("KASJER: get_message_queue failed");
@@ -36,12 +39,13 @@ int main(void) {
     Message msg;
     ssize_t msg_size = sizeof(Message) - sizeof(long);
     
+    // Główna pętla symulacji
     while (running) {
         if (check_fire_alarm()) {
             break;
         }
         
-        ssize_t received = msgrcv(msg_queue_id, &msg, msg_size, MSG_TYPE_PAYMENT, 0);
+        ssize_t received = msgrcv(msg_queue_id, &msg, msg_size, MSG_TYPE_PAYMENT, 0);  // Odbiera wiadomość o płatności
         
         if (received == -1) {
             if (errno == EINTR) {
@@ -64,20 +68,20 @@ int main(void) {
         
         log_message("KASJER: Otrzymał płatność od grupy #%d (rozmiar: %d)", msg.group_id, msg.group_size);
         
-        sleep(2);
+        sleep(1);  // Symulacja przetwarzania płatności
         
         if (check_fire_alarm()) {
             break;
         }
         
         Message paid_msg;
-        paid_msg.mtype = 2000 + msg.group_id;
+        paid_msg.mtype = 2000 + msg.group_id;  // Typ odpowiedzi: 2000 + group_id
         paid_msg.group_id = msg.group_id;
         paid_msg.group_size = msg.group_size;
         paid_msg.table_type = 0;
         paid_msg.table_index = 0;
         
-        if (msgsnd(msg_queue_id, &paid_msg, msg_size, 0) == -1) {
+        if (msgsnd(msg_queue_id, &paid_msg, msg_size, 0) == -1) {  // Wysyła potwierdzenie płatności
             if (!running) break;
             continue;
         }

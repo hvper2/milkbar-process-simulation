@@ -4,8 +4,8 @@
 static pid_t pid_kasjer = -1;
 static pid_t pid_obsluga = -1;
 static pid_t pid_kierownik = -1;
-static int running = 1; 
-static pid_t clients_pgid = -1; 
+static int running = 1;
+static pid_t clients_pgid = -1;  // PGID grupa klientów - do masowej ewakuacji przez killpg()
 
 static pid_t client_pids[TOTAL_CLIENTS];
 static int num_clients = 0;
@@ -15,6 +15,33 @@ static void signal_handler(int sig) {
     running = 0;
 }
 
+// Funkcja obsługująca sygnał TSTP
+static void sigtstp_handler(int sig) {
+    (void)sig;
+    // Zatrzymaj wszystkie procesy potomne
+    if (pid_kasjer > 0) kill(pid_kasjer, SIGSTOP);
+    if (pid_obsluga > 0) kill(pid_obsluga, SIGSTOP);
+    if (pid_kierownik > 0) kill(pid_kierownik, SIGSTOP);
+    if (clients_pgid > 0) killpg(clients_pgid, SIGSTOP);
+    
+    // Zatrzymaj siebie (domyślne zachowanie)
+    signal(SIGTSTP, SIG_DFL);
+    raise(SIGTSTP);
+}
+// Funkcja wznawiająca wszystkie procesy potomne
+static void sigcont_handler(int sig) {
+    (void)sig;
+    // Wznów wszystkie procesy potomne
+    if (pid_kasjer > 0) kill(pid_kasjer, SIGCONT);
+    if (pid_obsluga > 0) kill(pid_obsluga, SIGCONT);
+    if (pid_kierownik > 0) kill(pid_kierownik, SIGCONT);
+    if (clients_pgid > 0) killpg(clients_pgid, SIGCONT);
+    
+    // Przywróć obsługę SIGTSTP
+    signal(SIGTSTP, sigtstp_handler);
+}
+
+// Funkcja obsługująca sygnały potomnych
 static void sigchld_handler(int sig) {
     (void)sig;
     int status;
@@ -45,7 +72,7 @@ static pid_t spawn_client(const char *program_path, const char *program_name, co
         return -1;
     } else if (pid == 0) {
         if (clients_pgid > 0) {
-            setpgid(0, clients_pgid);
+            setpgid(0, clients_pgid);  // Dołącza do istniejącej grupy klientów
         }
         if (execl(program_path, program_name, group_size_str, (char *)NULL) == -1) {
             perror("spawn_client: execl failed");
@@ -54,9 +81,9 @@ static pid_t spawn_client(const char *program_path, const char *program_name, co
     } else {
         if (clients_pgid == -1) {
             clients_pgid = pid;
-            setpgid(pid, pid);
+            setpgid(pid, pid);  // Pierwszy klient tworzy nową grupę
         } else {
-            setpgid(pid, clients_pgid);
+            setpgid(pid, clients_pgid);  // Kolejni klienci dołączają do grupy
         }
     }
     return pid;
@@ -66,7 +93,11 @@ int main(void) {
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
     signal(SIGUSR1, signal_handler);
+
     signal(SIGCHLD, sigchld_handler);
+
+    signal(SIGTSTP, sigtstp_handler);
+    signal(SIGCONT, sigcont_handler);
     
     srand(time(NULL));
     
@@ -102,7 +133,7 @@ int main(void) {
     char clients_pgid_str[32];
     snprintf(pid_obsluga_str, sizeof(pid_obsluga_str), "%d", pid_obsluga);
     snprintf(pid_kasjer_str, sizeof(pid_kasjer_str), "%d", pid_kasjer);
-    snprintf(clients_pgid_str, sizeof(clients_pgid_str), "%d", -1);  
+    snprintf(clients_pgid_str, sizeof(clients_pgid_str), "%d", -1);
     
     pid_kierownik = fork();
     if (pid_kierownik == -1) {
@@ -147,7 +178,7 @@ int main(void) {
     
     time_t start_time = shared_state->simulation_start_time;
     
-    while (running) {
+    while (running) {  // Główna pętla symulacji
         time_t current_time = time(NULL);
         
         if (current_time - start_time >= SIMULATION_TIME) {
@@ -173,6 +204,21 @@ int main(void) {
     
     int status;
     
+    // Zakończ wszystkie procesy klientów przed zakończeniem
+    if (clients_pgid > 0) {
+        killpg(clients_pgid, SIGTERM);
+    }
+    
+    // Czekaj na zakończenie wszystkich procesów klientów
+    for (int i = 0; i < num_clients; i++) {
+        if (client_pids[i] > 0) {
+            waitpid(client_pids[i], &status, 0);
+        }
+    }
+    
+    // Czekaj na pozostałe procesy potomne
+    while (waitpid(-1, &status, WNOHANG) > 0) { }
+    
     if (pid_kasjer > 0) waitpid(pid_kasjer, &status, 0);
     if (pid_obsluga > 0) waitpid(pid_obsluga, &status, 0);
     if (pid_kierownik > 0) waitpid(pid_kierownik, &status, 0);
@@ -181,7 +227,7 @@ int main(void) {
     
     log_message("BAR: Symulacja zakończona");
     
-    cleanup_ipc();
+    cleanup_ipc();  // Czyszczenie zasobów IPC
 
     return EXIT_SUCCESS;
 }
