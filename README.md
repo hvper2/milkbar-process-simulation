@@ -1,4 +1,4 @@
-# Symulacja Procesów w Barze (C11 + System V IPC)
+# Symulacja Procesów Baru Mlecznego (C11 + System V IPC)
 
 Multi-procesowa symulacja baru mlecznego wykorzystująca bibliotekę standardową C11 oraz System V IPC (message queues, semafory, shared memory) na Linuxie.
 
@@ -99,40 +99,40 @@ Proces główny tworzy wszystkie zasoby IPC i uruchamia procesy pracowników:
 ## Linki do kodu - wymagane funkcje systemowe
 
 ### a. Tworzenie i obsługa plików
-- `creat()` - tworzenie pliku logu
-- `open()` - otwieranie pliku logu
-- `close()` - zamykanie pliku logu
-- `write()` - zapis do pliku logu
-- `unlink()` - usuwanie starego pliku logu
+- [`creat()`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/utils.c#L21) - tworzenie pliku logu
+- [`open()`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/utils.c#L27) - otwieranie pliku logu
+- [`close()`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/utils.c#L26) - zamykanie pliku logu
+- [`write()`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/utils.c#L91) - zapis do pliku logu
+- [`unlink()`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/utils.c#L19) - usuwanie starego pliku logu
 
 ### b. Tworzenie procesów
-- `fork()` - tworzenie procesów potomnych
-- `execl()` - uruchamianie programów
-- `setpgid()` - grupowanie procesów klientów (PGID)
-- `exit()` - zakończenie procesu
-- `waitpid()` - oczekiwanie na zakończenie procesu
+- [`fork()`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/bar.c#L53) - tworzenie procesów potomnych
+- [`execl()`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/bar.c#L59) - uruchamianie programów
+- [`setpgid()`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/bar.c#L75) - grupowanie procesów klientów (PGID)
+- [`exit()`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/utils.c#L13) - zakończenie procesu
+- [`waitpid()`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/bar.c#L48) - oczekiwanie na zakończenie procesu
 
 ### c. Obsługa sygnałów
-- `kill()` - wysyłanie sygnału do procesu
-- `killpg()` - wysyłanie sygnału do grupy procesów
-- `signal()` - rejestracja handlera sygnału
+- [`kill()`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/bar.c#L22) - wysyłanie sygnału do procesu
+- [`killpg()`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/bar.c#L25) - wysyłanie sygnału do grupy procesów
+- [`signal()`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/bar.c#L93) - rejestracja handlera sygnału
 
 ### d. Synchronizacja procesów (semafor)
-- `semget()` - tworzenie/otwieranie semafora
-- `semctl()` - kontrola semafora (SETVAL, IPC_RMID)
-- `semop()` - operacje na semaforze (wait/signal)
+- [`semget()`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/utils.c#L33) - tworzenie/otwieranie semafora
+- [`semctl()`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/utils.c#L39) - kontrola semafora (SETVAL, IPC_RMID)
+- [`semop()`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/utils.c#L82) - operacje na semaforze (wait/signal)
 
 ### e. Segmenty pamięci dzielonej
-- `shmget()` - tworzenie/otwieranie segmentu
-- `shmat()` - dołączanie segmentu
-- `shmdt()` - odłączanie segmentu
-- `shmctl()` - kontrola segmentu (IPC_RMID)
+- [`shmget()`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/utils.c#L114) - tworzenie/otwieranie segmentu
+- [`shmat()`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/utils.c#L120) - dołączanie segmentu
+- [`shmdt()`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/utils.c#L131) - odłączanie segmentu
+- [`shmctl()`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/utils.c#L165) - kontrola segmentu (IPC_RMID)
 
 ### f. Kolejki komunikatów
-- `msgget()` - tworzenie/otwieranie kolejki
-- `msgsnd()` - wysyłanie wiadomości
-- `msgrcv()` - odbieranie wiadomości
-- `msgctl()` - kontrola kolejki (IPC_RMID)
+- [`msgget()`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/utils.c#L139) - tworzenie/otwieranie kolejki
+- [`msgsnd()`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/kasjer.c#L84) - wysyłanie wiadomości
+- [`msgrcv()`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/kasjer.c#L48) - odbieranie wiadomości
+- [`msgctl()`](https://github.com/hvper2/milkbar-process-simulation/blob/main/src/utils.c#L170) - kontrola kolejki (IPC_RMID)
 
 ## Struktura projektu
 
